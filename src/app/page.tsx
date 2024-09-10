@@ -3,12 +3,19 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
+/**
+ * Interface defining the structure for provider models
+ */
 interface ProviderModels {
   provider: string;
   models: string[];
 }
 
+/**
+ * Home component - Main page of the AI-Enabled Web App
+ */
 export default function Home() {
+  // State variables for managing component data and UI
   const [prompt, setPrompt] = useState<string>('');
   const [selectedProvider, setSelectedProvider] = useState<string>('');
   const [selectedModel, setSelectedModel] = useState<string>('');
@@ -17,14 +24,18 @@ export default function Home() {
   const [providerModels, setProviderModels] = useState<ProviderModels[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState<boolean>(true);
 
+  /**
+   * Effect hook to fetch available models when the component mounts
+   */
   useEffect(() => {
     setIsLoadingModels(true);
     fetch('/api/generate')
       .then(response => response.json())
-      .then(data => {
+      .then((data: { models: Array<{ provider: string; model: string }> }) => {
         console.log('API response:', data);
         if (data && data.models && Array.isArray(data.models)) {
-          const groupedModels = data.models.reduce((acc, { provider, model }) => {
+          // Group models by provider
+          const groupedModels = data.models.reduce<Record<string, string[]>>((acc, { provider, model }) => {
             if (!acc[provider]) {
               acc[provider] = [];
             }
@@ -32,7 +43,8 @@ export default function Home() {
             return acc;
           }, {});
 
-          const providerData = Object.entries(groupedModels).map(([provider, models]) => ({
+          // Format provider data
+          const providerData: ProviderModels[] = Object.entries(groupedModels).map(([provider, models]) => ({
             provider,
             models,
           }));
@@ -55,6 +67,10 @@ export default function Home() {
       .finally(() => setIsLoadingModels(false));
   }, []);
 
+  /**
+   * Handler for provider change event
+   * @param e - Select element change event
+   */
   const handleProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newProvider = e.target.value;
     setSelectedProvider(newProvider);
@@ -62,9 +78,14 @@ export default function Home() {
     setSelectedModel(models[0] || '');
   };
 
+  /**
+   * Handler for form submission
+   * @param e - Form submit event
+   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setResult('');
 
     try {
       const response = await fetch('/api/generate', {
@@ -75,24 +96,31 @@ export default function Home() {
         body: JSON.stringify({ prompt, provider: selectedProvider, model: selectedModel }),
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error('Failed to generate response');
+        throw new Error(data.error || `HTTP error! status: ${response.status}`);
       }
 
-      const data = await response.json();
-      setResult(typeof data.result === 'string' ? data.result : JSON.stringify(data.result, null, 2));
+      if (!data.result) {
+        throw new Error('No result returned from the API');
+      }
+
+      setResult(data.result);
     } catch (error) {
       console.error('Error:', error);
-      setResult('An error occurred while generating the response.');
+      setResult(error instanceof Error ? `Error: ${error.message}` : 'An unknown error occurred while generating the response.');
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Component render
   return (
     <main className="container mx-auto p-4">
       <h1 className="text-2xl font-bold mb-4">AI-Enabled Web App Template</h1>
       
+      {/* Form for user input and model selection */}
       <form onSubmit={handleSubmit} className="mb-4">
         <div className="mb-4">
           <label htmlFor="prompt" className="block mb-2">Enter your prompt:</label>
@@ -146,6 +174,7 @@ export default function Home() {
         </button>
       </form>
       
+      {/* Display result */}
       {result && (
         <div className="mb-4">
           <h2 className="text-xl font-bold mb-2">Result:</h2>
@@ -153,7 +182,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* ... (chart component remains the same) */}
+      {/* Chart component (not implemented in this snippet) */}
     </main>
   )
 }
