@@ -1,0 +1,29 @@
+{
+    "version": "1.0",
+    "primary": {
+      "filename": "main_document.txt",
+      "hash": "bafybeih32lnzb5rd65v7n4rmk6zsnvjt3io25fk3qf2b44o7mbl3i5debi" 
+    },
+    "additional": [
+      {
+        "name": "Image1",
+        "type": "JPEG",
+        "filename": "ImageOfWoman1.jpg",
+        "hash": "bafkreigh2akiscail2zg5enfz32rmz2l5bnnim66o75gn72r3kddzltzqu"
+      },
+      {
+        "name": "audio_clip",
+        "type": "MP3",
+        "filename": "audio_clip.mp3",
+        "hash": "bafybeiadewe23t2tdcyiprtce5vvjs62iu24odjvqxlcqlrmomul5z4yfe"
+      }
+    ],
+    "support": [
+      {
+        "hash": "bafkreigh2akiscail2zg5enfz32rmz2l5bnnim66o75gn72r3kddzltzqu"
+      },
+      {
+        "hash": "bafkreibp5zd3klbffskibpyfwbgbjyo76z56pcwkn7trb6lxohw4ub5h4y"
+      }
+    ]
+  }

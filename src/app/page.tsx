@@ -2,20 +2,15 @@
 
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { ImageUpload } from '../components/ImageUpload';
+import { ModelSelector } from '../components/ModelSelector';
 
-/**
- * Interface defining the structure for provider models
- */
 interface ProviderModels {
   provider: string;
-  models: string[];
+  models: Array<{ name: string; supportsImages: boolean }>;
 }
 
-/**
- * Home component - Main page of the AI-Enabled Web App
- */
 export default function Home() {
-  // State variables for managing component data and UI
   const [prompt, setPrompt] = useState<string>('');
   const [selectedProvider, setSelectedProvider] = useState<string>('');
   const [selectedModel, setSelectedModel] = useState<string>('');
@@ -23,19 +18,16 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [providerModels, setProviderModels] = useState<ProviderModels[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState<boolean>(true);
+  const [uploadedImage, setUploadedImage] = useState<File | null>(null);
 
-  /**
-   * Effect hook to fetch available models when the component mounts
-   */
   useEffect(() => {
     setIsLoadingModels(true);
     fetch('/api/generate')
       .then(response => response.json())
-      .then((data: { models: Array<{ provider: string; model: string }> }) => {
+      .then(data => {
         console.log('API response:', data);
         if (data && data.models && Array.isArray(data.models)) {
-          // Group models by provider
-          const groupedModels = data.models.reduce<Record<string, string[]>>((acc, { provider, model }) => {
+          const groupedModels = data.models.reduce((acc, { provider, model }) => {
             if (!acc[provider]) {
               acc[provider] = [];
             }
@@ -43,8 +35,7 @@ export default function Home() {
             return acc;
           }, {});
 
-          // Format provider data
-          const providerData: ProviderModels[] = Object.entries(groupedModels).map(([provider, models]) => ({
+          const providerData = Object.entries(groupedModels).map(([provider, models]) => ({
             provider,
             models,
           }));
@@ -53,7 +44,7 @@ export default function Home() {
           setProviderModels(providerData);
           if (providerData.length > 0) {
             setSelectedProvider(providerData[0].provider);
-            setSelectedModel(providerData[0].models[0] || '');
+            setSelectedModel(providerData[0].models[0]?.name || '');
           }
         } else {
           console.error('Unexpected data structure:', data);
@@ -67,33 +58,34 @@ export default function Home() {
       .finally(() => setIsLoadingModels(false));
   }, []);
 
-  /**
-   * Handler for provider change event
-   * @param e - Select element change event
-   */
   const handleProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newProvider = e.target.value;
     setSelectedProvider(newProvider);
-    const models = providerModels.find(pm => pm.provider === newProvider)?.models || [];
-    setSelectedModel(models[0] || '');
+    const providerModelList = providerModels.find(pm => pm.provider === newProvider)?.models || [];
+    if (providerModelList.length > 0) {
+      setSelectedModel(providerModelList[0].name);
+    } else {
+      setSelectedModel('');
+    }
   };
 
-  /**
-   * Handler for form submission
-   * @param e - Form submit event
-   */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setResult('');
 
     try {
+      const formData = new FormData();
+      formData.append('prompt', prompt);
+      formData.append('provider', selectedProvider);
+      formData.append('model', selectedModel);
+      if (uploadedImage) {
+        formData.append('image', uploadedImage);
+      }
+
       const response = await fetch('/api/generate', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ prompt, provider: selectedProvider, model: selectedModel }),
+        body: formData,
       });
 
       const data = await response.json();
@@ -115,12 +107,10 @@ export default function Home() {
     }
   };
 
-  // Component render
   return (
     <main className="container mx-auto p-4">
       <h1 className="text-2xl font-bold mb-4">AI-Enabled Web App Template</h1>
       
-      {/* Form for user input and model selection */}
       <form onSubmit={handleSubmit} className="mb-4">
         <div className="mb-4">
           <label htmlFor="prompt" className="block mb-2">Enter your prompt:</label>
@@ -150,20 +140,19 @@ export default function Home() {
           {isLoadingModels ? (
             <p>Loading models...</p>
           ) : providerModels.length > 0 ? (
-            <select
-              id="model"
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="w-full p-2 border rounded"
-            >
-              {providerModels.find(pm => pm.provider === selectedProvider)?.models.map((model) => (
-                <option key={model} value={model}>{model}</option>
-              ))}
-            </select>
+            <ModelSelector
+              models={providerModels.find(pm => pm.provider === selectedProvider)?.models || []}
+              selectedModel={selectedModel}
+              onModelChange={(model) => setSelectedModel(model)}
+            />
           ) : (
             <p>No models available</p>
           )}
         </div>
+
+        {providerModels.find(pm => pm.provider === selectedProvider)?.models.find(m => m.name === selectedModel)?.supportsImages && (
+          <ImageUpload onImageUpload={setUploadedImage} />
+        )}
 
         <button 
           type="submit" 
@@ -174,7 +163,6 @@ export default function Home() {
         </button>
       </form>
       
-      {/* Display result */}
       {result && (
         <div className="mb-4">
           <h2 className="text-xl font-bold mb-2">Result:</h2>
@@ -182,7 +170,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* Chart component (not implemented in this snippet) */}
+      {/* ... (chart component remains the same) */}
     </main>
   )
 }

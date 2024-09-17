@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { LLMFactory } from '../../../lib/llm/llm-factory';
+import { fileToBase64 } from '../../../utils/fileUtils'; 
+
 
 // Define the list of supported LLM providers
 const PROVIDERS = ['Open-source', 'OpenAI', 'Anthropic'];
@@ -30,7 +32,11 @@ export async function GET() {
     );
 
     const allModels = providerModels.flatMap(pm => 
-      pm.models.map(model => ({ provider: pm.provider, model }))
+      pm.models.map(model => ({
+        provider: pm.provider,
+        model,
+        supportedInputs: ['text'], // Added supportedInputs here
+      }))
     );
 
     console.log('All available models:', allModels);
@@ -54,18 +60,37 @@ export async function GET() {
  */
 export async function POST(request: Request) {
   try {
-    const { prompt, provider, model } = await request.json();
+    console.log('POST request received');
+    const formData = await request.formData();
+    
+    const prompt = formData.get('prompt') as string;
+    const providerName = formData.get('provider') as string;
+    const modelName = formData.get('model') as string;
+    const imageFile = formData.get('image') as File | Blob | null;
 
-    if (!provider || !model) {
-      return NextResponse.json({ error: 'Provider and model must be specified' }, { status: 400 });
+    console.log('Extracted data:', { prompt, providerName, modelName, imageFile });
+
+    const provider = LLMFactory.getProvider(providerName);
+    console.log('Provider created:', provider);
+
+    let response: string;
+
+    if (imageFile) {
+      if (!provider.supportsImages(modelName)) {
+        throw new Error('Model does not support image queries');
+      }
+      const base64Image = await fileToBase64(imageFile);
+      console.log('Image converted to base64');
+      response = await provider.generateResponseWithImage(prompt, modelName, base64Image);
+    } else {
+      response = await provider.generateResponse(prompt, modelName);
     }
 
-    const llmProvider = LLMFactory.getProvider(provider);
-    const response = await llmProvider.generateResponse(prompt, model);
+    console.log('Response generated:', response);
 
     return NextResponse.json({ result: response });
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error in POST /api/generate:', error);
     return NextResponse.json({ error: 'An error occurred while generating the response.' }, { status: 500 });
   }
 }

@@ -12,7 +12,7 @@ export interface LLMProvider {
    * @returns A promise that resolves to an array of strings, where each string
    *          represents the name or identifier of an available model.
    */
-  getModels(): Promise<string[]>;
+  getModels(): Promise<Array<{ name: string; supportsImages: boolean }>>;
 
   /**
    * Generates a response using the specified model based on the given prompt.
@@ -22,4 +22,10 @@ export interface LLMProvider {
    * @returns A promise that resolves to a string containing the generated response.
    */
   generateResponse(prompt: string, model: string): Promise<string>;
+
+  generateResponseWithImage(prompt: string, model: string, base64Image: string): Promise<string>;
+
+  supportsImages(model: string): boolean;
+
 }
+

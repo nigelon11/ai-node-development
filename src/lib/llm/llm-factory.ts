@@ -1,7 +1,7 @@
 import { LLMProvider } from './llm-provider-interface';
 import { OllamaProvider } from './ollama-provider';
 import { OpenAIProvider } from './openai-provider';
-import { ClaudeProvider } from './claude-provider';
+import { AnthropicProvider } from './anthropic-provider';
 
 export class LLMFactory {
   static getProvider(providerName: string): LLMProvider {
@@ -11,7 +11,7 @@ export class LLMFactory {
       case 'OpenAI':
         return new OpenAIProvider();
       case 'Anthropic':
-        return new ClaudeProvider();
+        return new AnthropicProvider();
       default:
         throw new Error(`Unsupported provider: ${providerName}`);
     }

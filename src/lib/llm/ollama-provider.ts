@@ -34,12 +34,31 @@ export class OllamaProvider implements LLMProvider {
    *          represents the name of an available model.
    * @throws Will throw an error if the API request fails.
    */
-  async getModels(): Promise<string[]> {
-    const response = await fetch(`${this.baseUrl}/api/tags`);
-    const data = await response.json();
-    return data.models.map((model: any) => model.name);
-  }
 
+async getModels(): Promise<Array<{ name: string; supportsImages: boolean }>> {
+    const response = await fetch(`${this.baseUrl}/api/tags`);
+    
+    // Check if the response is successful
+    if (!response.ok) {
+        throw new Error(`Failed to fetch models: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    // Ensure that data.models exists and is an array
+    if (!data.models || !Array.isArray(data.models)) {
+        throw new Error('Invalid data format: "models" array is missing.');
+    }
+
+    // Map each model object to the desired structure
+    return data.models.map((model: any) => ({
+        name: model.name,
+        supportsImages: false
+    }));
+}
+  supportsImages(model: string): boolean {
+    return false;
+  }
   /**
    * Generates a response using the specified Ollama model based on the given prompt.
    * 
@@ -55,10 +74,14 @@ export class OllamaProvider implements LLMProvider {
         model: model,
       });
       const response = await ollama.invoke(prompt);
-      return response.content;
+      return response.content as string;
     } catch (error) {
       console.error('Error in OllamaProvider.generateResponse:', error);
       throw new Error(`Failed to generate response: ${error.message}`);
     }
+  }
+
+  async generateResponseWithImage(prompt: string, model: string, base64Image: string): Promise<string> {
+    throw new Error('Image input is not supported for this model.');
   }
 }

@@ -8,6 +8,7 @@
 
 import { LLMProvider } from './llm-provider-interface';
 import { ChatOpenAI } from "@langchain/openai";
+import { HumanMessage } from '@langchain/core/messages';
 
 /**
  * OpenAIProvider class
@@ -35,9 +36,17 @@ export class OpenAIProvider implements LLMProvider {
    * @note This is a simplified implementation. In a production environment,
    *       you should fetch the actual list of models from OpenAI's API.
    */
-  async getModels(): Promise<string[]> {
-    // This is a simplified list. In a real implementation, you'd fetch this from OpenAI's API.
-    return ['gpt-3.5-turbo', 'gpt-4'];
+  async getModels(): Promise<Array<{ name: string; supportsImages: boolean }>> {
+    return [
+      { name: 'gpt-3.5-turbo', supportsImages: false },
+      { name: 'gpt-4', supportsImages: false },
+      { name: 'gpt-4o', supportsImages: true },
+    ];
+  }
+
+  supportsImages(model: string): boolean {
+    const imageCapableModels = ['gpt-4o'];
+    return imageCapableModels.includes(model);
   }
 
   /**
@@ -54,6 +63,30 @@ export class OpenAIProvider implements LLMProvider {
       modelName: model,
     });
     const response = await openai.invoke(prompt);
+    if (typeof response.content !== 'string') {
+      throw new Error('Unexpected response format from OpenAI');
+    }
+    return response.content;
+  }
+
+  async generateResponseWithImage(prompt: string, model: string, base64Image: string): Promise<string> {
+    const openai = new ChatOpenAI({
+      openAIApiKey: this.apiKey,
+      modelName: model,
+    });
+
+    const response = await openai.invoke([
+      new HumanMessage({
+        content: [
+          { type: "text", text: prompt },
+          {
+            type: "image_url",
+            image_url: { url: `data:image/jpeg;base64,${base64Image}` }
+          }
+        ]
+      })
+    ]);
+
     if (typeof response.content !== 'string') {
       throw new Error('Unexpected response format from OpenAI');
     }
