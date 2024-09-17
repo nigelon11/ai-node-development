@@ -91,43 +91,40 @@ To use Ollama models locally:
 3. Repeat for any other models you want to use locally.
 
 4. Ensure the Ollama service is running before starting your Next.js application.
-
 ## Updating Available Models
 
 To change which models can be selected by the user:
 
-1. Open `src/lib/llm/ollama-provider.ts` and update the `getModels` method:
+1. Open `src/config/models.ts` and update the `modelConfig` object:
 
    ```typescript
-   async getModels(): Promise<string[]> {
-     const response = await fetch(`${this.baseUrl}/api/tags`);
-     const data = await response.json();
-     // Filter or modify the list of models as needed
-     return data.models
-       .map((model: any) => model.name)
-       .filter((name: string) => name.includes('llama') || name.includes('mistral'));
-   }
+   export const modelConfig = {
+     openai: [
+       { name: 'gpt-3.5-turbo', supportsImages: false },
+       { name: 'gpt-4', supportsImages: false },
+       { name: 'gpt-4o', supportsImages: true },
+     ],
+     anthropic: [
+       { name: 'claude-2.1', supportsImages: false },
+       { name: 'claude-3-sonnet-20240229', supportsImages: true },
+     ],
+   };
    ```
 
-2. For OpenAI, update `src/lib/llm/openai-provider.ts`:
+   Add, remove, or modify the models for OpenAI and Anthropic as needed. The `supportsImages` property determines whether the model can process image inputs.
 
-   ```typescript
-   async getModels(): Promise<string[]> {
-     // Update this list with the models you want to make available
-     return ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo-preview'];
-   }
-   ```
+2. For Open-source (local) models, use ollama as described above.   Models availble to the AI web template will be the ones listed with the command 
 
-3. For Claude, update `src/lib/llm/claude-provider.ts`:
+ollama list
 
-   ```typescript
-   async getModels(): Promise<string[]> {
-     // Update this list with the Claude models you want to make available
-     return ['claude-2.1', 'claude-3-opus-20240229'];
-   }
-   ```
+New models can be added by pulling them using 
 
-4. If you want to add or remove entire providers, update the `PROVIDERS` array in `src/app/api/generate/route.ts`:
+ollama pull model-name
+
+A complete list of the models available can be found at the Ollama Library (https://ollama.com/library)
+
+
+3. If you want to add or remove entire providers, update the `PROVIDERS` array in `src/app/api/generate/route.ts`:
 
    ```typescript
    const PROVIDERS = ['Open-source', 'OpenAI', 'Anthropic', 'NewProvider'];

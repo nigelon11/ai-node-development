@@ -9,6 +9,7 @@
 import { LLMProvider } from './llm-provider-interface';
 import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage } from '@langchain/core/messages';
+import { modelConfig } from '../../config/models';
 
 /**
  * OpenAIProvider class
@@ -18,6 +19,7 @@ import { HumanMessage } from '@langchain/core/messages';
  */
 export class OpenAIProvider implements LLMProvider {
   private apiKey: string;
+  private models: Array<{ name: string; supportsImages: boolean }>;
 
   /**
    * Constructor for OpenAIProvider
@@ -26,6 +28,7 @@ export class OpenAIProvider implements LLMProvider {
    */
   constructor(apiKey: string = process.env.OPENAI_API_KEY || '') {
     this.apiKey = apiKey;
+    this.models = modelConfig.openai;
   }
 
   /**
@@ -37,16 +40,12 @@ export class OpenAIProvider implements LLMProvider {
    *       you should fetch the actual list of models from OpenAI's API.
    */
   async getModels(): Promise<Array<{ name: string; supportsImages: boolean }>> {
-    return [
-      { name: 'gpt-3.5-turbo', supportsImages: false },
-      { name: 'gpt-4', supportsImages: false },
-      { name: 'gpt-4o', supportsImages: true },
-    ];
+    return this.models;
   }
 
   supportsImages(model: string): boolean {
-    const imageCapableModels = ['gpt-4o'];
-    return imageCapableModels.includes(model);
+    const modelInfo = this.models.find(m => m.name === model);
+    return modelInfo ? modelInfo.supportsImages : false;
   }
 
   /**

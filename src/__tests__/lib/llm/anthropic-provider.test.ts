@@ -2,12 +2,21 @@ import '@anthropic-ai/sdk/shims/node';
 import { AnthropicProvider } from '../../../lib/llm/anthropic-provider';
 import { ChatAnthropic } from "@langchain/anthropic";
 import { HumanMessage } from '@langchain/core/messages';
-
+import { modelConfig } from '../../../config/models';
 
 jest.mock("@langchain/anthropic", () => ({
   ChatAnthropic: jest.fn().mockImplementation(() => ({
     invoke: jest.fn(),
   })),
+}));
+
+jest.mock('../../../config/models', () => ({
+  modelConfig: {
+    anthropic: [
+      { name: 'claude-2.1', supportsImages: false },
+      { name: 'claude-3-sonnet-20240229', supportsImages: true },
+    ],
+  },
 }));
 
 describe('AnthropicProvider', () => {
@@ -20,15 +29,13 @@ describe('AnthropicProvider', () => {
 
   test('getModels returns expected models', async () => {
     const models = await provider.getModels();
-    expect(models).toEqual([
-      { name: 'claude-2.1', supportsImages: false },
-      { name: 'claude-3-sonnet-20240229', supportsImages: true },
-    ]);
+    expect(models).toEqual(modelConfig.anthropic);
   });
 
   test('supportsImages returns correct values', () => {
     expect(provider.supportsImages('claude-2.1')).toBe(false);
     expect(provider.supportsImages('claude-3-sonnet-20240229')).toBe(true);
+    expect(provider.supportsImages('non-existent-model')).toBe(false);
   });
 
   test('generateResponse returns expected response', async () => {

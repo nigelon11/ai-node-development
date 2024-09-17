@@ -2,27 +2,27 @@ import '@anthropic-ai/sdk/shims/node';
 import { LLMProvider } from './llm-provider-interface';
 import { ChatAnthropic } from "@langchain/anthropic";
 import { HumanMessage } from '@langchain/core/messages';
+import { modelConfig } from '../../config/models';
 
 export class AnthropicProvider implements LLMProvider {
   private apiKey: string;
+  private models: Array<{ name: string; supportsImages: boolean }>;
 
   constructor(apiKey: string = process.env.ANTHROPIC_API_KEY || '') {
     this.apiKey = apiKey;
     if (!this.apiKey) {
       console.warn('ANTHROPIC_API_KEY is not set. Anthropic provider may not work correctly.');
     }
+    this.models = modelConfig.anthropic;
   }
 
   async getModels(): Promise<Array<{ name: string; supportsImages: boolean }>> {
-    return [
-      { name: 'claude-2.1', supportsImages: false },
-      { name: 'claude-3-sonnet-20240229', supportsImages: true },
-    ];
+    return this.models;
   }
 
   supportsImages(model: string): boolean {
-    const imageCapableModels = ['claude-3-sonnet-20240229'];
-    return imageCapableModels.includes(model);
+    const modelInfo = this.models.find(m => m.name === model);
+    return modelInfo ? modelInfo.supportsImages : false;
   }
 
   async generateResponse(prompt: string, model: string): Promise<string> {

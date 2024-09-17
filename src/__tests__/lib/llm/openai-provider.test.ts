@@ -20,6 +20,18 @@ jest.mock('openai', () => ({
 
 jest.mock("@langchain/openai");
 
+import { modelConfig } from '../../../config/models';
+
+jest.mock('../../../config/models', () => ({
+  modelConfig: {
+    openai: [
+      { name: 'gpt-3.5-turbo', supportsImages: false },
+      { name: 'gpt-4', supportsImages: false },
+      { name: 'gpt-4o', supportsImages: true },
+    ],
+  },
+}));
+
 describe('OpenAIProvider', () => {
   let provider: OpenAIProvider;
 
@@ -30,17 +42,14 @@ describe('OpenAIProvider', () => {
 
   test('getModels returns expected models', async () => {
     const models = await provider.getModels();
-    expect(models).toEqual([
-      { name: 'gpt-3.5-turbo', supportsImages: false },
-      { name: 'gpt-4', supportsImages: false },
-      { name: 'gpt-4o', supportsImages: true },
-    ]);
+    expect(models).toEqual(modelConfig.openai);
   });
 
   test('supportsImages returns correct values', () => {
     expect(provider.supportsImages('gpt-3.5-turbo')).toBe(false);
     expect(provider.supportsImages('gpt-4')).toBe(false);
     expect(provider.supportsImages('gpt-4o')).toBe(true);
+    expect(provider.supportsImages('non-existent-model')).toBe(false);
   });
 
   test('generateResponse returns expected response', async () => {
