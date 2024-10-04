@@ -53,14 +53,17 @@ export class AnthropicProvider implements LLMProvider {
       modelName: model,
     });
 
-    // Combine the prompt and image into a single string
-    const messageContent = `${prompt}\n\n![Image](data:image/jpeg;base64,${base64Image})`;
+    const message = new HumanMessage({
+      content: [
+        { type: "text", text: prompt },
+        {
+          type: "image_url",
+          image_url: { url: `data:image/jpeg;base64,${base64Image}` },
+        },
+      ],
+    });
 
-    const response = await anthropic.invoke([
-      new HumanMessage({
-        content: messageContent,
-      }),
-    ]);
+    const response = await anthropic.invoke([message]);
 
     if (typeof response.content !== 'string') {
       throw new Error('Unexpected response format from Anthropic');
