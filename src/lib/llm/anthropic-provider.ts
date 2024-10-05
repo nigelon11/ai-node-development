@@ -70,4 +70,9 @@ export class AnthropicProvider implements LLMProvider {
     }
     return response.content;
   }
+
+  async initialize(): Promise<void> {
+    // No asynchronous initialization needed
+    return Promise.resolve();
+  }
 }

@@ -31,6 +31,11 @@ export class OpenAIProvider implements LLMProvider {
     this.models = modelConfig.openai;
   }
 
+  async initialize(): Promise<void> {
+    // No asynchronous initialization needed
+    return Promise.resolve();
+  }
+
   /**
    * Retrieves the list of available models from OpenAI.
    * 

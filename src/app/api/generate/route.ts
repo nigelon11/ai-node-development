@@ -19,7 +19,7 @@ export async function GET() {
       PROVIDERS.map(async (provider) => {
         try {
           console.log(`Fetching models for provider: ${provider}`);
-          const llmProvider = LLMFactory.getProvider(provider);
+          const llmProvider = await LLMFactory.getProvider(provider);
           console.log(`Provider instance created for: ${provider}`);
           const models = await llmProvider.getModels();
           console.log(`Models for ${provider}:`, models);
@@ -35,7 +35,7 @@ export async function GET() {
       pm.models.map(model => ({
         provider: pm.provider,
         model,
-        supportedInputs: ['text'], // Added supportedInputs here
+        supportedInputs: ['text', ...(model.supportsImages ? ['image'] : [])],
       }))
     );
 
@@ -62,25 +62,28 @@ export async function POST(request: Request) {
   try {
     console.log('POST request received');
     const formData = await request.formData();
-    
     const prompt = formData.get('prompt') as string;
     const providerName = formData.get('provider') as string;
     const modelName = formData.get('model') as string;
-    const imageFile = formData.get('image') as File | Blob | null;
+    const imageFile = formData.get('image') as File | null;
 
     console.log('Extracted data:', { prompt, providerName, modelName, imageFile });
 
-    const provider = LLMFactory.getProvider(providerName);
+    if (!prompt || !providerName || !modelName) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+
+    const provider = await LLMFactory.getProvider(providerName);
     console.log('Provider created:', provider);
 
     let response: string;
 
     if (imageFile) {
-      if (!provider.supportsImages(modelName)) {
-        throw new Error('Model does not support image queries');
+      const supportsImages = await provider.supportsImages(modelName);
+      if (!supportsImages) {
+        return NextResponse.json({ error: 'Model does not support image inputs' }, { status: 400 });
       }
       const base64Image = await fileToBase64(imageFile);
-      console.log('Image converted to base64');
       response = await provider.generateResponseWithImage(prompt, modelName, base64Image);
     } else {
       response = await provider.generateResponse(prompt, modelName);

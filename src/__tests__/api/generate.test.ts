@@ -110,7 +110,7 @@ describe('/api/generate', () => {
       {
         provider: 'OpenAI',
         model: { name: 'gpt-4o', supportsImages: true },
-        supportedInputs: ['text'],
+        supportedInputs: ['text', 'image'],
       },
       // Anthropic models
       {
@@ -121,7 +121,7 @@ describe('/api/generate', () => {
       {
         provider: 'Anthropic',
         model: { name: 'claude-3-sonnet-20240229', supportsImages: true },
-        supportedInputs: ['text'],
+        supportedInputs: ['text', 'image'],
       },
     ];
 

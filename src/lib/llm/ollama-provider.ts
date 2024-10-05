@@ -17,6 +17,8 @@ import { ChatOllama } from "@langchain/ollama";
  */
 export class OllamaProvider implements LLMProvider {
   private baseUrl: string;
+  private models: Array<{ name: string; supportsImages: boolean }> = [];
+  private modelsInitialized: Promise<void>;
 
   /**
    * Constructor for OllamaProvider
@@ -25,6 +27,19 @@ export class OllamaProvider implements LLMProvider {
    */
   constructor(baseUrl: string = 'http://localhost:11434') {
     this.baseUrl = baseUrl;
+    this.modelsInitialized = this.initializeModels();
+  }
+
+  async initialize(): Promise<void> {
+    await this.modelsInitialized;
+  }
+
+  private async initializeModels() {
+    try {
+      this.models = await this.getModels();
+    } catch (error) {
+      console.error('Failed to initialize models:', error);
+    }
   }
 
   /**
@@ -36,29 +51,42 @@ export class OllamaProvider implements LLMProvider {
    */
 
 async getModels(): Promise<Array<{ name: string; supportsImages: boolean }>> {
+  try {
     const response = await fetch(`${this.baseUrl}/api/tags`);
     
-    // Check if the response is successful
+    console.log('Ollama API response status:', response.status);
+    
     if (!response.ok) {
-        throw new Error(`Failed to fetch models: ${response.status} ${response.statusText}`);
+      throw new Error(`Failed to fetch models: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
+    console.log('Ollama API response data:', data);
 
-    // Ensure that data.models exists and is an array
     if (!data.models || !Array.isArray(data.models)) {
-        throw new Error('Invalid data format: "models" array is missing.');
+      throw new Error('Invalid data format: "models" array is missing.');
     }
 
-    // Map each model object to the desired structure
-    return data.models.map((model: any) => ({
-        name: model.name,
-        supportsImages: false
+    const models = data.models.map((model: any) => ({
+      name: model.name,
+      supportsImages: model.details && 
+                      model.details.families && 
+                      model.details.families.includes('clip')
     }));
-}
-  supportsImages(model: string): boolean {
-    return false;
+
+    console.log('Processed Ollama models:', models);
+    return models;
+  } catch (error) {
+    console.error('Error fetching Ollama models:', error);
+    return [];
   }
+}
+  
+async supportsImages(model: string): Promise<boolean> {
+  await this.modelsInitialized;
+  return this.models.some(m => m.name === model && m.supportsImages);
+}
+
   /**
    * Generates a response using the specified Ollama model based on the given prompt.
    * 
@@ -82,6 +110,57 @@ async getModels(): Promise<Array<{ name: string; supportsImages: boolean }>> {
   }
 
   async generateResponseWithImage(prompt: string, model: string, base64Image: string): Promise<string> {
-    throw new Error('Image input is not supported for this model.');
+    const supportsImages = await this.supportsImages(model);
+    if (!supportsImages) {
+      throw new Error(`Model ${model} does not support image inputs.`);
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/api/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: model,
+          prompt: prompt,
+          images: [base64Image],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('Unable to read response stream');
+      }
+
+      let fullResponse = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = new TextDecoder().decode(value);
+        const lines = chunk.split('\n').filter(line => line.trim() !== '');
+        
+        for (const line of lines) {
+          try {
+            const data = JSON.parse(line);
+            if (data.response) {
+              fullResponse += data.response;
+            }
+          } catch (parseError) {
+            console.error('Error parsing JSON chunk:', parseError);
+          }
+        }
+      }
+
+      return fullResponse.trim();
+    } catch (error) {
+      console.error('Error in OllamaProvider.generateResponseWithImage:', error);
+      throw new Error(`Failed to generate response with image: ${error.message}`);
+    }
   }
 }

@@ -58,6 +58,11 @@ export default function Home() {
       .finally(() => setIsLoadingModels(false));
   }, []);
 
+  const resetForm = () => {
+    setResult('');
+    setUploadedImage(null);
+  };
+
   const handleProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newProvider = e.target.value;
     setSelectedProvider(newProvider);
@@ -67,6 +72,12 @@ export default function Home() {
     } else {
       setSelectedModel('');
     }
+    resetForm();
+  };
+
+  const handleModelChange = (model: string) => {
+    setSelectedModel(model);
+    resetForm();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -118,7 +129,7 @@ export default function Home() {
             id="prompt"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            className="w-full p-2 border rounded"
+            className="w-full p-2 border rounded text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800"
             rows={4}
           />
         </div>
@@ -129,10 +140,12 @@ export default function Home() {
             id="provider"
             value={selectedProvider}
             onChange={handleProviderChange}
-            className="w-full p-2 border rounded mb-2"
+            className="w-full p-2 border rounded mb-2 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800"
           >
             {providerModels.map((pm) => (
-              <option key={pm.provider} value={pm.provider}>{pm.provider}</option>
+              <option key={pm.provider} value={pm.provider} className="text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800">
+                {pm.provider}
+              </option>
             ))}
           </select>
 
@@ -143,7 +156,8 @@ export default function Home() {
             <ModelSelector
               models={providerModels.find(pm => pm.provider === selectedProvider)?.models || []}
               selectedModel={selectedModel}
-              onModelChange={(model) => setSelectedModel(model)}
+              onModelChange={handleModelChange}
+              className=""
             />
           ) : (
             <p>No models available</p>
@@ -151,7 +165,10 @@ export default function Home() {
         </div>
 
         {providerModels.find(pm => pm.provider === selectedProvider)?.models.find(m => m.name === selectedModel)?.supportsImages && (
-          <ImageUpload onImageUpload={setUploadedImage} />
+          <>
+            <ImageUpload onImageUpload={setUploadedImage} />
+            {uploadedImage && <p className="mt-2 text-sm text-green-600">Image uploaded successfully</p>}
+          </>
         )}
 
         <button 
@@ -166,7 +183,7 @@ export default function Home() {
       {result && (
         <div className="mb-4">
           <h2 className="text-xl font-bold mb-2">Result:</h2>
-          <pre className="p-4 bg-gray-100 rounded whitespace-pre-wrap">{result}</pre>
+          <pre className="p-4 bg-white dark:bg-gray-800 rounded whitespace-pre-wrap text-gray-900 dark:text-gray-100">{result}</pre>
         </div>
       )}
 

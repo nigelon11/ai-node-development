@@ -4,16 +4,22 @@ import { OpenAIProvider } from './openai-provider';
 import { AnthropicProvider } from './anthropic-provider';
 
 export class LLMFactory {
-  static getProvider(providerName: string): LLMProvider {
-    switch (providerName) {
-      case 'Open-source':
-        return new OllamaProvider();
+  static async getProvider(provider: string): Promise<LLMProvider> {
+    let llmProvider: LLMProvider;
+    switch (provider) {
       case 'OpenAI':
-        return new OpenAIProvider();
+        llmProvider = new OpenAIProvider();
+        break;
       case 'Anthropic':
-        return new AnthropicProvider();
+        llmProvider = new AnthropicProvider();
+        break;
+      case 'Open-source':
+        llmProvider = new OllamaProvider();
+        break;
       default:
-        throw new Error(`Unsupported provider: ${providerName}`);
+        throw new Error(`Unknown provider: ${provider}`);
     }
+    await llmProvider.initialize();
+    return llmProvider;
   }
 }

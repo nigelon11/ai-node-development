@@ -25,7 +25,8 @@ export interface LLMProvider {
 
   generateResponseWithImage(prompt: string, model: string, base64Image: string): Promise<string>;
 
-  supportsImages(model: string): boolean;
+  supportsImages(model: string): Promise<boolean>;
 
+  initialize(): Promise<void>;
 }
 

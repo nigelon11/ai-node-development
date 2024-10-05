@@ -22,9 +22,17 @@ describe('OllamaProvider', () => {
     expect(models).toEqual(mockModels);
   });
 
-  test('supportsImages always returns false', () => {
-    expect(provider.supportsImages('phi3:latest')).toBe(false);
-    expect(provider.supportsImages('llama3.1:latest')).toBe(false);
+  test('supportsImages returns correct values', async () => {
+    const mockModels = [
+      { name: 'phi3:latest', supportsImages: false },
+      { name: 'llama3.1:latest', supportsImages: false },
+      { name: 'llava:latest', supportsImages: true },
+    ];
+    jest.spyOn(provider, 'getModels').mockResolvedValue(mockModels);
+
+    await expect(provider.supportsImages('phi3:latest')).resolves.toBe(false);
+    await expect(provider.supportsImages('llama3.1:latest')).resolves.toBe(false);
+    await expect(provider.supportsImages('llava:latest')).resolves.toBe(true);
   });
 
   test('generateResponse returns expected response', async () => {
@@ -48,6 +56,6 @@ describe('OllamaProvider', () => {
       'Attempting image prompt',
       'phi3:latest',
       'base64EncodedImageString'
-    )).rejects.toThrow('Image input is not supported for this model.');
+    )).rejects.toThrow('Model phi3:latest does not support image inputs.');
   });
 });

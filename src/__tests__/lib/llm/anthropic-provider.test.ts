@@ -73,7 +73,13 @@ describe('AnthropicProvider', () => {
     });
     expect(mockInvoke).toHaveBeenCalledWith([
       new HumanMessage({
-        content: 'Describe this image\n\n![Image](data:image/jpeg;base64,base64EncodedImageString)',
+        content: [
+          { type: "text", text: 'Describe this image' },
+          {
+            type: "image_url",
+            image_url: { url: 'data:image/jpeg;base64,base64EncodedImageString' }
+          }
+        ],
       }),
     ]);
   });
