@@ -97,4 +97,40 @@ describe('OpenAIProvider', () => {
       })
     ]);
   });
+
+  test('generateResponseWithAttachments returns expected response', async () => {
+    const mockInvoke = jest.fn().mockResolvedValue({ content: 'Mocked response with attachments' });
+    (ChatOpenAI as jest.Mock).mockImplementation(() => ({
+      invoke: mockInvoke
+    }));
+
+    const attachments = [
+      { type: 'text', content: 'Additional text' },
+      { type: 'image', content: 'base64EncodedImageString' }
+    ];
+
+    const response = await provider.generateResponseWithAttachments(
+      'Test prompt with attachments',
+      'gpt-3.5-turbo',
+      attachments
+    );
+
+    expect(response).toBe('Mocked response with attachments');
+    expect(ChatOpenAI).toHaveBeenCalledWith({
+      openAIApiKey: 'test-api-key',
+      modelName: 'gpt-3.5-turbo',
+    });
+    expect(mockInvoke).toHaveBeenCalledWith([
+      new HumanMessage({
+        content: [
+          { type: "text", text: 'Test prompt with attachments' },
+          { type: "text", text: 'Additional text' },
+          {
+            type: "image_url",
+            image_url: { url: 'data:image/jpeg;base64,base64EncodedImageString' }
+          }
+        ]
+      })
+    ]);
+  });
 });

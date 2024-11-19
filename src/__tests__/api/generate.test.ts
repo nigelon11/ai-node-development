@@ -183,15 +183,18 @@ describe('/api/generate', () => {
   test('POST handles image upload and generates response', async () => {
     // Mock the provider
     const mockProvider = {
-      supportsImages: jest.fn().mockReturnValue(true),
+      supportsImages: jest.fn().mockResolvedValue(true),
+      supportsAttachments: jest.fn().mockResolvedValue(false),
+      generateResponse: jest.fn(),
       generateResponseWithImage: jest.fn().mockResolvedValue('Generated response with image'),
+      generateResponseWithAttachments: jest.fn(),
     };
     (LLMFactory.getProvider as jest.Mock).mockReturnValue(mockProvider);
 
     // Mock fileToBase64
     (fileUtils.fileToBase64 as jest.Mock).mockResolvedValue('base64EncodedImageData');
 
-    // Mock FormData
+    // Mock FormData with file entries
     const mockFormData = {
       get: jest.fn((key) => {
         switch (key) {
@@ -201,12 +204,14 @@ describe('/api/generate', () => {
             return 'OpenAI';
           case 'model':
             return 'gpt-4o';
-          case 'image':
-            return new Blob(['fake image data'], { type: 'image/jpeg' });
           default:
             return null;
         }
       }),
+      entries: jest.fn().mockReturnValue([
+        ['file0', new Blob(['fake image data'], { type: 'image/jpeg' })]
+      ]),
+      getAll: jest.fn(() => []),
     };
 
     // Mock Request
@@ -231,8 +236,7 @@ describe('/api/generate', () => {
     // Assert the result
     expect(result).toEqual({ result: 'Generated response with image' });
 
-    // Assert that the correct methods were called
-    expect(mockProvider.supportsImages).toHaveBeenCalledWith('gpt-4o');
+    // Update assertions to check for generateResponseWithImage
     expect(mockProvider.generateResponseWithImage).toHaveBeenCalledWith(
       'Describe this image',
       'gpt-4o',

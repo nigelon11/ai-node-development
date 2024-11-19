@@ -19,7 +19,7 @@ import { modelConfig } from '../../config/models';
  */
 export class OpenAIProvider implements LLMProvider {
   private apiKey: string;
-  private models: Array<{ name: string; supportsImages: boolean }>;
+  private models: Array<{ name: string; supportsImages: boolean; supportsAttachments: boolean }>;
 
   /**
    * Constructor for OpenAIProvider
@@ -44,13 +44,18 @@ export class OpenAIProvider implements LLMProvider {
    * @note This is a simplified implementation. In a production environment,
    *       you should fetch the actual list of models from OpenAI's API.
    */
-  async getModels(): Promise<Array<{ name: string; supportsImages: boolean }>> {
+  async getModels(): Promise<Array<{ name: string; supportsImages: boolean; supportsAttachments: boolean }>> {
     return this.models;
   }
 
   supportsImages(model: string): boolean {
     const modelInfo = this.models.find(m => m.name === model);
     return modelInfo ? modelInfo.supportsImages : false;
+  }
+
+  supportsAttachments(model: string): boolean {
+    const modelInfo = this.models.find(m => m.name === model);
+    return modelInfo ? modelInfo.supportsAttachments : false;
   }
 
   /**
@@ -88,6 +93,38 @@ export class OpenAIProvider implements LLMProvider {
             image_url: { url: `data:image/jpeg;base64,${base64Image}` }
           }
         ]
+      })
+    ]);
+
+    if (typeof response.content !== 'string') {
+      throw new Error('Unexpected response format from OpenAI');
+    }
+    return response.content;
+  }
+
+  async generateResponseWithAttachments(prompt: string, model: string, attachments: Array<{ type: string, content: string }>): Promise<string> {
+    const openai = new ChatOpenAI({
+      openAIApiKey: this.apiKey,
+      modelName: model,
+    });
+
+    const messageContent = [
+      { type: "text", text: prompt },
+      ...attachments.map(attachment => {
+        if (attachment.type === "image") {
+          return {
+            type: "image_url",
+            image_url: { url: `data:image/jpeg;base64,${attachment.content}` }
+          };
+        } else {
+          return { type: "text", text: attachment.content };
+        }
+      })
+    ];
+
+    const response = await openai.invoke([
+      new HumanMessage({
+        content: messageContent
       })
     ]);
 

@@ -49,19 +49,25 @@ describe('POST /api/rank-and-justify', () => {
     const mockOpenAIProvider = {
       generateResponse: jest.fn().mockResolvedValue(mockOpenAIResponse),
       generateResponseWithImage: jest.fn(),
+      generateResponseWithAttachments: jest.fn(),
       supportsImages: jest.fn().mockResolvedValue(true),
+      supportsAttachments: jest.fn().mockResolvedValue(true),
     };
 
     const mockAnthropicProvider = {
       generateResponse: jest.fn().mockResolvedValue(mockAnthropicResponse),
       generateResponseWithImage: jest.fn(),
+      generateResponseWithAttachments: jest.fn(),
       supportsImages: jest.fn().mockResolvedValue(true),
+      supportsAttachments: jest.fn().mockResolvedValue(false),
     };
 
     const mockOllamaProvider = {
       generateResponse: jest.fn().mockResolvedValue(mockOllamaResponse),
       generateResponseWithImage: jest.fn(),
+      generateResponseWithAttachments: jest.fn(),
       supportsImages: jest.fn().mockResolvedValue(false),
+      supportsAttachments: jest.fn().mockResolvedValue(false),
     };
 
     const mockJustifierProvider = {
@@ -164,10 +170,13 @@ describe('POST /api/rank-and-justify', () => {
       'phi3'
     );
 
-    // Ensure that generateResponseWithImage was NOT called for any provider
+    // Ensure that generateResponseWithImage and generateResponseWithAttachments were NOT called
     expect(mockOpenAIProvider.generateResponseWithImage).not.toHaveBeenCalled();
+    expect(mockOpenAIProvider.generateResponseWithAttachments).not.toHaveBeenCalled();
     expect(mockAnthropicProvider.generateResponseWithImage).not.toHaveBeenCalled();
+    expect(mockAnthropicProvider.generateResponseWithAttachments).not.toHaveBeenCalled();
     expect(mockOllamaProvider.generateResponseWithImage).not.toHaveBeenCalled();
+    expect(mockOllamaProvider.generateResponseWithAttachments).not.toHaveBeenCalled();
 
     // Ensure that the JustifierProvider was called with the right arguments
     const [justifierProvider, justifierModel] = process.env.JUSTIFIER_MODEL?.split(':') || ['JustifierProvider', 'default-model'];
@@ -196,19 +205,25 @@ describe('POST /api/rank-and-justify', () => {
         .mockResolvedValueOnce(mockOpenAIResponse1)
         .mockResolvedValueOnce(mockOpenAIResponse2),
       generateResponseWithImage: jest.fn(),
+      generateResponseWithAttachments: jest.fn(),
       supportsImages: jest.fn().mockResolvedValue(true),
+      supportsAttachments: jest.fn().mockResolvedValue(true),
     };
 
     const mockAnthropicProvider = {
       generateResponse: jest.fn().mockResolvedValue(mockAnthropicResponse),
       generateResponseWithImage: jest.fn(),
+      generateResponseWithAttachments: jest.fn(),
       supportsImages: jest.fn().mockResolvedValue(true),
+      supportsAttachments: jest.fn().mockResolvedValue(false),
     };
 
     const mockOllamaProvider = {
       generateResponse: jest.fn().mockResolvedValue(mockOllamaResponse),
       generateResponseWithImage: jest.fn(),
+      generateResponseWithAttachments: jest.fn(),
       supportsImages: jest.fn().mockResolvedValue(false),
+      supportsAttachments: jest.fn().mockResolvedValue(false),
     };
 
     const mockJustifierProvider = {
@@ -310,10 +325,13 @@ describe('POST /api/rank-and-justify', () => {
       'phi3'
     );
 
-    // Ensure that generateResponseWithImage was NOT called for any provider
+    // Ensure that generateResponseWithImage and generateResponseWithAttachments were NOT called
     expect(mockOpenAIProvider.generateResponseWithImage).not.toHaveBeenCalled();
+    expect(mockOpenAIProvider.generateResponseWithAttachments).not.toHaveBeenCalled();
     expect(mockAnthropicProvider.generateResponseWithImage).not.toHaveBeenCalled();
+    expect(mockAnthropicProvider.generateResponseWithAttachments).not.toHaveBeenCalled();
     expect(mockOllamaProvider.generateResponseWithImage).not.toHaveBeenCalled();
+    expect(mockOllamaProvider.generateResponseWithAttachments).not.toHaveBeenCalled();
 
     // Ensure that the JustifierProvider was called with the right arguments
     const [justifierProvider, justifierModel] = process.env.JUSTIFIER_MODEL?.split(':') || ['JustifierProvider', 'default-model'];
@@ -346,7 +364,9 @@ describe('POST /api/rank-and-justify', () => {
         .mockResolvedValueOnce(mockOpenAIResponses[0])
         .mockResolvedValueOnce(mockOpenAIResponses[1]),
       generateResponseWithImage: jest.fn(),
+      generateResponseWithAttachments: jest.fn(),
       supportsImages: jest.fn().mockResolvedValue(true),
+      supportsAttachments: jest.fn().mockResolvedValue(true),
     };
 
     const mockAnthropicProvider = {
@@ -354,7 +374,9 @@ describe('POST /api/rank-and-justify', () => {
         .mockResolvedValueOnce(mockAnthropicResponses[0])
         .mockResolvedValueOnce(mockAnthropicResponses[1]),
       generateResponseWithImage: jest.fn(),
+      generateResponseWithAttachments: jest.fn(),
       supportsImages: jest.fn().mockResolvedValue(true),
+      supportsAttachments: jest.fn().mockResolvedValue(false),
     };
 
     const mockOllamaProvider = {
@@ -362,7 +384,9 @@ describe('POST /api/rank-and-justify', () => {
         .mockResolvedValueOnce(mockOllamaResponses[0])
         .mockResolvedValueOnce(mockOllamaResponses[1]),
       generateResponseWithImage: jest.fn(),
+      generateResponseWithAttachments: jest.fn(),
       supportsImages: jest.fn().mockResolvedValue(false),
+      supportsAttachments: jest.fn().mockResolvedValue(false),
     };
 
     const mockJustifierProvider = {
@@ -463,10 +487,13 @@ describe('POST /api/rank-and-justify', () => {
       'phi3'
     );
 
-    // Ensure that generateResponseWithImage was NOT called for any provider
+    // Ensure that generateResponseWithImage and generateResponseWithAttachments were NOT called
     expect(mockOpenAIProvider.generateResponseWithImage).not.toHaveBeenCalled();
+    expect(mockOpenAIProvider.generateResponseWithAttachments).not.toHaveBeenCalled();
     expect(mockAnthropicProvider.generateResponseWithImage).not.toHaveBeenCalled();
+    expect(mockAnthropicProvider.generateResponseWithAttachments).not.toHaveBeenCalled();
     expect(mockOllamaProvider.generateResponseWithImage).not.toHaveBeenCalled();
+    expect(mockOllamaProvider.generateResponseWithAttachments).not.toHaveBeenCalled();
 
     // Ensure that the JustifierProvider was called with the right arguments
     const [justifierProvider, justifierModel] = process.env.JUSTIFIER_MODEL?.split(':') || ['JustifierProvider', 'default-model'];

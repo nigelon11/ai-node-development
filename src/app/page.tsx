@@ -7,7 +7,7 @@ import { ModelSelector } from '../components/ModelSelector';
 
 interface ProviderModels {
   provider: string;
-  models: Array<{ name: string; supportsImages: boolean }>;
+  models: Array<{ name: string; supportsImages: boolean; supportsAttachments: boolean }>;
 }
 
 export default function Home() {
@@ -19,6 +19,7 @@ export default function Home() {
   const [providerModels, setProviderModels] = useState<ProviderModels[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState<boolean>(true);
   const [uploadedImage, setUploadedImage] = useState<File | null>(null);
+  const [attachments, setAttachments] = useState<File[]>([]);
 
   useEffect(() => {
     setIsLoadingModels(true);
@@ -61,6 +62,7 @@ export default function Home() {
   const resetForm = () => {
     setResult('');
     setUploadedImage(null);
+    setAttachments([]);
   };
 
   const handleProviderChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -76,8 +78,22 @@ export default function Home() {
   };
 
   const handleModelChange = (model: string) => {
+    const selectedProviderModels = providerModels.find(pm => pm.provider === selectedProvider);
+    const modelInfo = selectedProviderModels?.models.find(m => m.name === model);
+
+    if (modelInfo && !modelInfo.supportsAttachments && attachments.length > 0) {
+      alert('This model does not support attachments. Please remove attachments or select a different model.');
+      return;
+    }
+
     setSelectedModel(model);
     resetForm();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setAttachments(Array.from(e.target.files));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -90,7 +106,12 @@ export default function Home() {
       formData.append('prompt', prompt);
       formData.append('provider', selectedProvider);
       formData.append('model', selectedModel);
-      if (uploadedImage) {
+
+      if (selectedProvider === 'OpenAI' && selectedModel === 'gpt-4o') {
+        attachments.forEach((file, index) => {
+          formData.append(`file${index}`, file);
+        });
+      } else if (uploadedImage) {
         formData.append('image', uploadedImage);
       }
 
@@ -117,6 +138,10 @@ export default function Home() {
       setIsLoading(false);
     }
   };
+
+  const filteredModels = providerModels.find(pm => pm.provider === selectedProvider)?.models.filter(m => {
+    return attachments.length === 0 || m.supportsAttachments;
+  }) || [];
 
   return (
     <main className="container mx-auto p-4">
@@ -154,7 +179,7 @@ export default function Home() {
             <p>Loading models...</p>
           ) : providerModels.length > 0 ? (
             <ModelSelector
-              models={providerModels.find(pm => pm.provider === selectedProvider)?.models || []}
+              models={filteredModels}
               selectedModel={selectedModel}
               onModelChange={handleModelChange}
               className=""
@@ -164,12 +189,27 @@ export default function Home() {
           )}
         </div>
 
-        {providerModels.find(pm => pm.provider === selectedProvider)?.models.find(m => m.name === selectedModel)?.supportsImages && (
-          <>
-            <ImageUpload onImageUpload={setUploadedImage} />
-            {uploadedImage && <p className="mt-2 text-sm text-green-600">Image uploaded successfully</p>}
-          </>
+        {selectedProvider === 'OpenAI' && selectedModel === 'gpt-4o' && (
+          <div className="mb-4">
+            <label htmlFor="attachments" className="block mb-2">Upload Files:</label>
+            <input
+              type="file"
+              id="attachments"
+              multiple
+              onChange={handleFileChange}
+              className="w-full p-2 border rounded text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800"
+            />
+          </div>
         )}
+
+        {selectedProvider !== 'OpenAI' || selectedModel !== 'gpt-4o' ? (
+          providerModels.find(pm => pm.provider === selectedProvider)?.models.find(m => m.name === selectedModel)?.supportsImages && (
+            <>
+              <ImageUpload onImageUpload={setUploadedImage} />
+              {uploadedImage && <p className="mt-2 text-sm text-green-600">Image uploaded successfully</p>}
+            </>
+          )
+        ) : null}
 
         <button 
           type="submit" 

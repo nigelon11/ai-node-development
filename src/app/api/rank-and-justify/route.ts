@@ -18,6 +18,7 @@ interface InputData {
   image?: string;
   iterations?: number;
   models: ModelInput[];
+  attachments?: string[];
 }
 
 export async function POST(request: Request) {
@@ -82,6 +83,7 @@ export async function POST(request: Request) {
       // Adjust the prompt with the pre-prompt
       const fullPrompt = `${prePromptConfig.prompt}\n\n${prompt}`;
       const supportsImages = await llmProvider.supportsImages(modelInfo.model);
+      const supportsAttachments = await llmProvider.supportsAttachments(modelInfo.model);
 
       const allOutputs: number[][] = [];
 
@@ -94,6 +96,12 @@ export async function POST(request: Request) {
               fullPrompt,
               modelInfo.model,
               base64Image
+            );
+          } else if (supportsAttachments && body.attachments) {
+            responseText = await llmProvider.generateResponseWithAttachments(
+              fullPrompt,
+              modelInfo.model,
+              body.attachments
             );
           } else {
             responseText = await llmProvider.generateResponse(fullPrompt, modelInfo.model);
@@ -121,7 +129,7 @@ export async function POST(request: Request) {
       }
 
       console.log(`All outputs for ${modelInfo.provider} - ${modelInfo.model}:`, allOutputs);
-      
+
       // Store outputs and weights
       modelOutputs.push(allOutputs);
       weights.push(weight);

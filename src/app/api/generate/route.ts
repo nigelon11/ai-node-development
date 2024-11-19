@@ -65,9 +65,8 @@ export async function POST(request: Request) {
     const prompt = formData.get('prompt') as string;
     const providerName = formData.get('provider') as string;
     const modelName = formData.get('model') as string;
-    const imageFile = formData.get('image') as File | null;
 
-    console.log('Extracted data:', { prompt, providerName, modelName, imageFile });
+    console.log('Extracted data:', { prompt, providerName, modelName });
 
     if (!prompt || !providerName || !modelName) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -76,15 +75,38 @@ export async function POST(request: Request) {
     const provider = await LLMFactory.getProvider(providerName);
     console.log('Provider created:', provider);
 
-    let response: string;
+    const attachments: Array<{ type: string, content: string }> = [];
+    for (const [key, value] of formData.entries()) {
+      if (key === 'image' || key.startsWith('file')) {
+        const file = value as File;
+        const base64Content = await fileToBase64(file);
+        const fileType = file.type.split('/')[0]; // Get the type (e.g., 'image', 'text')
 
-    if (imageFile) {
-      const supportsImages = await provider.supportsImages(modelName);
-      if (!supportsImages) {
-        return NextResponse.json({ error: 'Model does not support image inputs' }, { status: 400 });
+        if (fileType === 'image') {
+          attachments.push({ type: 'image', content: base64Content });
+        } else {
+          attachments.push({ type: 'text', content: base64Content });
+        }
       }
-      const base64Image = await fileToBase64(imageFile);
-      response = await provider.generateResponseWithImage(prompt, modelName, base64Image);
+    }
+
+    let response: string;
+    if (attachments.length > 0) {
+      const supportsImages = await provider.supportsImages(modelName);
+      
+      if (supportsImages && attachments.length === 1 && attachments[0].type === 'image') {
+        response = await provider.generateResponseWithImage(prompt, modelName, attachments[0].content);
+      } else {
+        const supportsAttachments = 'supportsAttachments' in provider ? 
+          await provider.supportsAttachments(modelName) : 
+          false;
+        
+        if (supportsAttachments) {
+          response = await provider.generateResponseWithAttachments(prompt, modelName, attachments);
+        } else {
+          throw new Error(`Model ${modelName} does not support the provided attachments`);
+        }
+      }
     } else {
       response = await provider.generateResponse(prompt, modelName);
     }
