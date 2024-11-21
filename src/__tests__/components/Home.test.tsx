@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import Home from '../../app/page';
 
@@ -43,24 +43,34 @@ describe('Home component', () => {
   });
 
   test('renders main components', async () => {
-    render(<Home />);
+    await act(async () => {
+      render(<Home />);
+    });
   
-    expect(screen.getByText('AI-Enabled Web App Template')).toBeInTheDocument();
+    expect(screen.getByText('AI Model Interface')).toBeInTheDocument();
     expect(screen.getByLabelText('Enter your prompt:')).toBeInTheDocument();
     expect(screen.getByLabelText('Select Provider:')).toBeInTheDocument();
     
     await waitFor(() => {
       expect(screen.getByLabelText('Select LLM model:')).toBeInTheDocument();
-    }, { timeout: 5000 });
+    });
     
-    expect(screen.getByRole('button', { name: 'Generate' })).toBeInTheDocument();
-  }, 10000);
+    // Find the submit button within the form
+    const form = screen.getByRole('form', { name: 'Generate AI Response' });
+    const submitButton = within(form).getByRole('button', { name: 'Generate' });
+    expect(submitButton).toBeInTheDocument();
+    expect(submitButton).toHaveAttribute('type', 'submit');
+  });
 
   test('handles user input', async () => {
-    render(<Home />);
+    await act(async () => {
+      render(<Home />);
+    });
     
     const promptInput = screen.getByLabelText('Enter your prompt:');
-    fireEvent.change(promptInput, { target: { value: 'Test prompt' } });
+    await act(async () => {
+      fireEvent.change(promptInput, { target: { value: 'Test prompt' } });
+    });
     expect(promptInput).toHaveValue('Test prompt');
 
     await waitFor(() => {
@@ -95,15 +105,23 @@ describe('Home component', () => {
         json: () => Promise.resolve({ result: 'Generated response' }),
       }));
 
-    render(<Home />);
+    await act(async () => {
+      render(<Home />);
+    });
 
     await waitFor(() => {
       expect(screen.getByLabelText('Select Provider:')).toHaveValue('OpenAI');
       expect(screen.getByLabelText('Select LLM model:')).toHaveValue('gpt-3.5-turbo');
     });
 
-    fireEvent.change(screen.getByLabelText('Enter your prompt:'), { target: { value: 'Test prompt' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+    fireEvent.change(screen.getByLabelText('Enter your prompt:'), { 
+      target: { value: 'Test prompt' } 
+    });
+
+    const form = screen.getByRole('form', { name: 'Generate AI Response' });
+    await act(async () => {
+      fireEvent.click(within(form).getByRole('button', { name: 'Generate' }));
+    });
 
     await waitFor(() => {
       expect(screen.getByText('Result:')).toBeInTheDocument();
@@ -130,18 +148,26 @@ describe('Home component', () => {
         json: () => Promise.resolve({ error: 'An error occurred while generating the response.' }),
       }));
 
-    render(<Home />);
+    await act(async () => {
+      render(<Home />);
+    });
 
     await waitFor(() => {
       expect(screen.getByLabelText('Select Provider:')).toHaveValue('OpenAI');
       expect(screen.getByLabelText('Select LLM model:')).toHaveValue('gpt-3.5-turbo');
     });
 
-    fireEvent.change(screen.getByLabelText('Enter your prompt:'), { target: { value: 'Test prompt' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Generate' }));
+    fireEvent.change(screen.getByLabelText('Enter your prompt:'), { 
+      target: { value: 'Test prompt' } 
+    });
+
+    const form = screen.getByRole('form', { name: 'Generate AI Response' });
+    await act(async () => {
+      fireEvent.click(within(form).getByRole('button', { name: 'Generate' }));
+    });
 
     await waitFor(() => {
-      expect(screen.getByText(/Error: An error occurred while generating the response/)).toBeInTheDocument();
+      expect(screen.getByText('An error occurred while generating the response.')).toBeInTheDocument();
     });
   });
 
@@ -157,7 +183,9 @@ describe('Home component', () => {
       }),
     });
 
-    render(<Home />);
+    await act(async () => {
+      render(<Home />);
+    });
 
     await waitFor(() => {
       expect(screen.getByLabelText('Select Provider:')).toBeInTheDocument();

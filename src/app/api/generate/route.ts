@@ -60,62 +60,109 @@ export async function GET() {
  */
 export async function POST(request: Request) {
   try {
-    console.log('POST request received');
     const formData = await request.formData();
     const prompt = formData.get('prompt') as string;
     const providerName = formData.get('provider') as string;
     const modelName = formData.get('model') as string;
 
-    console.log('Extracted data:', { prompt, providerName, modelName });
+    console.log('POST request received in generate/route.ts');
+    console.log('Request details:', { prompt, providerName, modelName });
 
     if (!prompt || !providerName || !modelName) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
-    }
-
-    const provider = await LLMFactory.getProvider(providerName);
-    console.log('Provider created:', provider);
-
-    const attachments: Array<{ type: string, content: string }> = [];
-    for (const [key, value] of formData.entries()) {
-      if (key === 'image' || key.startsWith('file')) {
-        const file = value as File;
-        const base64Content = await fileToBase64(file);
-        const fileType = file.type.split('/')[0]; // Get the type (e.g., 'image', 'text')
-
-        if (fileType === 'image') {
-          attachments.push({ type: 'image', content: base64Content });
-        } else {
-          attachments.push({ type: 'text', content: base64Content });
-        }
-      }
+      return NextResponse.json(
+        { error: 'Missing required fields: prompt, provider, and model' },
+        { status: 400 }
+      );
     }
 
     let response: string;
+    const provider = await LLMFactory.getProvider(providerName);
+    console.log('Provider created:', providerName);
+
+    // Process attachments
+    const attachments: any[] = [];
+    console.log('Form data entries:', Array.from(formData.entries()).map(([key, value]) => ({
+      key,
+      type: value instanceof File ? 'File' : typeof value,
+      fileType: value instanceof File ? value.type : 'N/A'
+    })));
+
+    for (const [key, value] of formData.entries()) {
+      console.log('Processing form entry:', { key, isFile: value instanceof File });
+      
+      if (value instanceof File) {
+        console.log('Processing attachment:', key);
+        const file = value;
+        const fileType = file.type;
+        console.log('File details:', {
+          key,
+          type: fileType,
+          size: file.size,
+          name: file.name
+        });
+        
+        if (fileType.startsWith('image/')) {
+          const base64Data = await fileToBase64(file);
+          console.log('Image processed successfully:', {
+            key,
+            dataLength: base64Data.length
+          });
+          
+          attachments.push({
+            type: 'image',
+            content: base64Data.replace(/^data:image\/[^;]+;base64,/, ''),
+            mediaType: fileType
+          });
+          console.log('Added image attachment');
+        } else {
+          attachments.push({
+            type: 'text',
+            content: await file.text(),
+            mediaType: 'text/plain'
+          });
+          console.log('Added text attachment');
+        }
+      }
+    }
+    console.log('Total attachments:', attachments.length);
+
+    console.log('Processed attachments:', attachments.map(a => ({
+      type: a.type,
+      contentLength: a.content.length,
+      mediaType: a.mediaType
+    })));
+
     if (attachments.length > 0) {
       const supportsImages = await provider.supportsImages(modelName);
+      const supportsAttachments = await provider.supportsAttachments(modelName);
       
-      if (supportsImages && attachments.length === 1 && attachments[0].type === 'image') {
+      console.log('Model supports images:', supportsImages);
+      console.log('Model supports attachments:', supportsAttachments);
+      
+      if (supportsAttachments) {
+        console.log('Calling generateResponseWithAttachments');
+        response = await provider.generateResponseWithAttachments(prompt, modelName, attachments);
+      } else if (supportsImages && attachments.length === 1 && attachments[0].type === 'image') {
+        console.log('Calling generateResponseWithImage');
+        console.log('Calling generateResponseWithImage with:', {
+          promptLength: prompt.length,
+          modelName,
+          imageContentLength: attachments[0].content.length
+        });
         response = await provider.generateResponseWithImage(prompt, modelName, attachments[0].content);
       } else {
-        const supportsAttachments = 'supportsAttachments' in provider ? 
-          await provider.supportsAttachments(modelName) : 
-          false;
-        
-        if (supportsAttachments) {
-          response = await provider.generateResponseWithAttachments(prompt, modelName, attachments);
-        } else {
-          throw new Error(`Model ${modelName} does not support the provided attachments`);
-        }
+        throw new Error(`Model ${modelName} does not support the provided attachments configuration`);
       }
     } else {
       response = await provider.generateResponse(prompt, modelName);
     }
 
-    console.log('Response generated:', response);
-
     return NextResponse.json({ result: response });
   } catch (error) {
     console.error('Error in POST /api/generate:', error);
-    return NextResponse.json({ error: 'An error occurred while generating the response.' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'An error occurred while generating the response.' },
+      { status: 500 }
+    );
   }
 }

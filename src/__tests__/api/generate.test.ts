@@ -140,6 +140,9 @@ describe('/api/generate', () => {
    * Test 2: GET handles error and returns error response when no models are available
    */
   test('GET handles error and returns error response when no models are available', async () => {
+    // Mock console.error to prevent it from cluttering the test output
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    
     // Mock all providers to return empty arrays
     const mockOpenAIGetModels = jest.fn().mockResolvedValue([]);
     const mockOpenSourceGetModels = jest.fn().mockResolvedValue([]);
@@ -175,12 +178,19 @@ describe('/api/generate', () => {
     expect(mockOpenAIGetModels).toHaveBeenCalled();
     expect(mockOpenSourceGetModels).toHaveBeenCalled();
     expect(mockAnthropicGetModels).toHaveBeenCalled();
+
+    // Clean up console spy
+    consoleErrorSpy.mockRestore();
   });
 
   /**
    * Test 3: POST handles image upload and generates response
    */
   test('POST handles image upload and generates response', async () => {
+    // Add console spy to capture logs
+    const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
     // Mock the provider
     const mockProvider = {
       supportsImages: jest.fn().mockResolvedValue(true),
@@ -194,54 +204,59 @@ describe('/api/generate', () => {
     // Mock fileToBase64
     (fileUtils.fileToBase64 as jest.Mock).mockResolvedValue('base64EncodedImageData');
 
-    // Mock FormData with file entries
-    const mockFormData = {
-      get: jest.fn((key) => {
-        switch (key) {
-          case 'prompt':
-            return 'Describe this image';
-          case 'provider':
-            return 'OpenAI';
-          case 'model':
-            return 'gpt-4o';
-          default:
-            return null;
+    // Create a proper File object
+    const imageFile = new File(
+      ['fake image data'],
+      'test.jpg',
+      { type: 'image/jpeg' }
+    );
+
+    // Create FormData with proper structure
+    const formData = new FormData();
+    formData.append('prompt', 'Describe this image');
+    formData.append('provider', 'OpenAI');
+    formData.append('model', 'gpt-4o');
+    formData.append('file0', imageFile);
+
+    // Mock Request with formData method
+    const mockRequest = {
+      formData: jest.fn().mockResolvedValue({
+        get: (key: string) => {
+          const value = formData.get(key);
+          console.log('FormData.get called with:', key, 'returned:', value);
+          return value;
+        },
+        entries: () => {
+          const entries = Array.from(formData.entries());
+          console.log('FormData.entries called, returning:', entries);
+          return entries[Symbol.iterator]();
         }
       }),
-      entries: jest.fn().mockReturnValue([
-        ['file0', new Blob(['fake image data'], { type: 'image/jpeg' })]
-      ]),
-      getAll: jest.fn(() => []),
-    };
-
-    // Mock Request
-    const mockRequest = {
-      formData: jest.fn().mockResolvedValue(mockFormData),
     } as unknown as Request;
 
-    // Mock NextResponse
-    (NextResponse.json as jest.Mock).mockImplementation((data) => ({
-      json: async () => data,
-    }));
-
     // Execute the POST function
-    const response = await POST(mockRequest as unknown as Request);
+    const response = await POST(mockRequest);
     const result = await response.json();
 
-    console.log('Mock provider calls:', mockProvider.supportsImages.mock.calls);
-  console.log('Mock provider generateResponseWithImage calls:', mockProvider.generateResponseWithImage.mock.calls);
-  console.log('fileToBase64 calls:', (fileUtils.fileToBase64 as jest.Mock).mock.calls);
-  console.log('NextResponse.json calls:', (NextResponse.json as jest.Mock).mock.calls);
+    // Log the response and result
+    console.log('Response:', response);
+    console.log('Result:', result);
+    console.log('Mock provider calls:', mockProvider.generateResponseWithImage.mock.calls);
 
     // Assert the result
     expect(result).toEqual({ result: 'Generated response with image' });
 
-    // Update assertions to check for generateResponseWithImage
+    // Verify the correct methods were called
+    expect(mockProvider.supportsImages).toHaveBeenCalledWith('gpt-4o');
     expect(mockProvider.generateResponseWithImage).toHaveBeenCalledWith(
       'Describe this image',
       'gpt-4o',
       'base64EncodedImageData'
     );
-    expect(fileUtils.fileToBase64).toHaveBeenCalled();
+    expect(fileUtils.fileToBase64).toHaveBeenCalledWith(imageFile);
+
+    // Clean up spies
+    consoleLogSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
   });
 });

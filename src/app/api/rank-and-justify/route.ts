@@ -24,7 +24,6 @@ interface InputData {
 export async function POST(request: Request) {
   try {
     console.log('POST request received at /api/rank-and-justify');
-
     const body: InputData = await request.json();
 
     // Input validation
@@ -36,9 +35,27 @@ export async function POST(request: Request) {
     }
 
     const prompt = body.prompt;
-    const base64Image = body.image || null;
     const iterations = body.iterations || 1;
     const models = body.models;
+
+    // Process attachments if they exist
+    const attachments = body.attachments?.map(content => {
+      if (content.startsWith('data:image')) {
+        const mediaTypeMatch = content.match(/^data:([^;]+);base64,/);
+        const mediaType = mediaTypeMatch ? mediaTypeMatch[1] : 'image/jpeg';
+        const base64Data = content.replace(/^data:image\/[^;]+;base64,/, '');
+        return {
+          type: 'image',
+          content: base64Data,
+          mediaType: mediaType
+        };
+      }
+      return {
+        type: 'text',
+        content: content,
+        mediaType: 'text/plain'
+      };
+    }) || [];
 
     // Initialize data structures
     const modelOutputs: number[][][] = []; // [modelIndex][iteration][outcomeIndex]
@@ -82,7 +99,6 @@ export async function POST(request: Request) {
 
       // Adjust the prompt with the pre-prompt
       const fullPrompt = `${prePromptConfig.prompt}\n\n${prompt}`;
-      const supportsImages = await llmProvider.supportsImages(modelInfo.model);
       const supportsAttachments = await llmProvider.supportsAttachments(modelInfo.model);
 
       const allOutputs: number[][] = [];
@@ -91,29 +107,21 @@ export async function POST(request: Request) {
         console.log(`Iteration ${i + 1} for ${modelInfo.provider} - ${modelInfo.model}`);
         for (let c = 0; c < count; c++) {
           let responseText: string;
-          if (base64Image && supportsImages) {
-            responseText = await llmProvider.generateResponseWithImage(
-              fullPrompt,
-              modelInfo.model,
-              base64Image
-            );
-          } else if (supportsAttachments && body.attachments) {
+          if (attachments.length > 0 && supportsAttachments) {
             responseText = await llmProvider.generateResponseWithAttachments(
               fullPrompt,
               modelInfo.model,
-              body.attachments
+              attachments
             );
           } else {
-            responseText = await llmProvider.generateResponse(fullPrompt, modelInfo.model);
+            responseText = await llmProvider.generateResponse(
+              fullPrompt,
+              modelInfo.model
+            );
           }
 
           console.log(`Raw response from ${modelInfo.provider} - ${modelInfo.model}:`, responseText);
-
-          // Parse the model response to extract the decision vector
           const { decisionVector, justification } = parseModelResponse(responseText);
-
-          console.log(`Parsed decision vector:`, decisionVector);
-          console.log(`Parsed justification:`, justification);
 
           if (justification) {
             allJustifications.push(`From model ${modelInfo.model}:\n${justification}`);
@@ -121,60 +129,41 @@ export async function POST(request: Request) {
 
           if (!decisionVector || !Array.isArray(decisionVector)) {
             console.error(`Failed to parse decision vector from model ${modelInfo.model}`);
-            continue; // This will skip the current iteration but not return a response
+            return NextResponse.json(
+              { 
+                error: `Failed to parse decision vector from model ${modelInfo.model}. Response: ${responseText}` 
+              },
+              { status: 400 }
+            );
           }
 
           allOutputs.push(decisionVector);
         }
       }
 
-      console.log(`All outputs for ${modelInfo.provider} - ${modelInfo.model}:`, allOutputs);
-
-      // Store outputs and weights
       modelOutputs.push(allOutputs);
       weights.push(weight);
     }
 
-    // Aggregation Logic
-    // 4. Compute average decision vector for each model
+    // Compute average decision vector for each model
     for (let j = 0; j < models.length; j++) {
       const outputs = modelOutputs[j];
       const count = outputs.length;
-
       const sumVector = outputs.reduce((acc, vec) => {
         return vec.map((val, idx) => (acc[idx] || 0) + val);
       }, []);
-
       const avgVector = sumVector.map((val) => val / count);
       V_average.push(avgVector);
-
-      // Logging intermediate results
-      console.log(`Average vector for model ${models[j].model}:`, avgVector);
     }
 
-    // 5. Compute composite score for each iteration
-    const V_composite: number[][] = [];
-    for (let i = 0; i < iterations; i++) {
-      const compositeVector = V_average[0].map((_, k) => {
-        return V_average.reduce((sum, v_avg, j) => {
-          return sum + v_avg[k] * weights[j];
-        }, 0);
-      });
-      V_composite.push(compositeVector);
+    // Compute total decision vector
+    const V_total = V_average[0].map((_, idx) => {
+      return V_average.reduce((sum, v_avg, j) => {
+        return sum + v_avg[idx] * weights[j];
+      }, 0);
+    });
 
-      // Logging intermediate results
-      console.log(`Composite vector for iteration ${i + 1}:`, compositeVector);
-    }
-
-    // 6. Compute total decision vector by averaging composite scores
-    const V_total = V_composite.reduce((acc, vec) => {
-      return vec.map((val, idx) => (acc[idx] || 0) + val);
-    }, []).map((val) => val / iterations);
-
-    // Logging the final aggregated score
-    console.log('Final aggregated score vector:', V_total);
-
-    // Initialize the justifier provider
+    // Get justification from the justifier model
     const justifierProvider = await LLMFactory.getProvider(justifierProviderName);
     if (!justifierProvider) {
       return NextResponse.json(
@@ -183,16 +172,18 @@ export async function POST(request: Request) {
       );
     }
 
-    // Generate the final justification
-    const justification = await generateJustification(V_total, allJustifications, justifierProvider, justifierModelName);
+    const justification = await generateJustification(
+      V_total,
+      allJustifications,
+      justifierProvider,
+      justifierModelName
+    );
 
-    // Output Structure
-    const responseData = {
+    // Return the final response
+    return NextResponse.json({
       aggregatedScore: V_total,
-      justification,
-    };
-    console.log('Returning response:', JSON.stringify(responseData, null, 2));
-    return NextResponse.json(responseData);
+      justification
+    });
   } catch (error) {
     console.error('Error in POST /api/rank-and-justify:', error);
     return NextResponse.json(
@@ -249,4 +240,12 @@ export async function generateJustification(
 
   const response = await justifierProvider.generateResponse(prompt, justifierModel);
   return response;
+}
+// Helper function to determine attachment type
+function determineAttachmentType(content: string): string {
+  // Check if the content is a base64 image
+  if (content.startsWith('data:image')) {
+    return 'image';
+  }
+  return 'text';
 }

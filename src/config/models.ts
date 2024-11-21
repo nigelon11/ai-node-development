@@ -5,8 +5,9 @@ export const modelConfig = {
     { name: 'gpt-4o', supportsImages: true, supportsAttachments: true },
   ],
   anthropic: [
-    { name: 'claude-2.1', supportsImages: false },
-    { name: 'claude-3-sonnet-20240229', supportsImages: true },
+    { name: 'claude-2.1', supportsImages: false, supportsAttachments: false },
+    { name: 'claude-3-sonnet-20240229', supportsImages: true, supportsAttachments: false },
+    { name: 'claude-3-5-sonnet-20241022', supportsImages: true, supportsAttachments: true },
   ],
   ollama: [
     // Add ollama models here

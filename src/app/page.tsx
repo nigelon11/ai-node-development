@@ -4,10 +4,17 @@ import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { ImageUpload } from '../components/ImageUpload';
 import { ModelSelector } from '../components/ModelSelector';
+import { TabSelector } from '../components/TabSelector';
+import { RankAndJustifyForm } from '../components/RankAndJustifyForm';
 
 interface ProviderModels {
   provider: string;
   models: Array<{ name: string; supportsImages: boolean; supportsAttachments: boolean }>;
+}
+
+interface RankAndJustifyResult {
+  aggregatedScore: number[];
+  justification: string;
 }
 
 export default function Home() {
@@ -20,6 +27,8 @@ export default function Home() {
   const [isLoadingModels, setIsLoadingModels] = useState<boolean>(true);
   const [uploadedImage, setUploadedImage] = useState<File | null>(null);
   const [attachments, setAttachments] = useState<File[]>([]);
+  const [activeTab, setActiveTab] = useState<string>('generate');
+  const [rankResult, setRankResult] = useState<RankAndJustifyResult | null>(null);
 
   useEffect(() => {
     setIsLoadingModels(true);
@@ -107,11 +116,14 @@ export default function Home() {
       formData.append('provider', selectedProvider);
       formData.append('model', selectedModel);
 
-      if (selectedProvider === 'OpenAI' && selectedModel === 'gpt-4o') {
+      if (attachments.length > 0) {
         attachments.forEach((file, index) => {
           formData.append(`file${index}`, file);
         });
-      } else if (uploadedImage) {
+      }
+
+      if (uploadedImage && !providerModels.find(pm => pm.provider === selectedProvider)
+          ?.models.find(m => m.name === selectedModel)?.supportsAttachments) {
         formData.append('image', uploadedImage);
       }
 
@@ -121,19 +133,52 @@ export default function Home() {
       });
 
       const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      if (data.error) {
+        throw new Error(data.error);
       }
-
-      if (!data.result) {
-        throw new Error('No result returned from the API');
-      }
-
       setResult(data.result);
     } catch (error) {
       console.error('Error:', error);
-      setResult(error instanceof Error ? `Error: ${error.message}` : 'An unknown error occurred while generating the response.');
+      setResult(error instanceof Error ? error.message : 'An error occurred');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRankAndJustifySubmit = async (data: {
+    prompt: string;
+    models: Array<{
+      provider: string;
+      model: string;
+      weight: number;
+      count?: number;
+    }>;
+    image?: string;
+    attachments?: string[];
+    iterations?: number;
+  }) => {
+    setIsLoading(true);
+    setRankResult(null);
+
+    try {
+      const response = await fetch('/api/rank-and-justify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      setRankResult(result);
+    } catch (error) {
+      console.error('Error:', error);
+      setResult(error instanceof Error ? `Error: ${error.message}` : 'An unknown error occurred');
     } finally {
       setIsLoading(false);
     }
@@ -144,82 +189,122 @@ export default function Home() {
   }) || [];
 
   return (
-    <main className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">AI-Enabled Web App Template</h1>
+    <main className="container mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold mb-8">AI Model Interface</h1>
       
-      <form onSubmit={handleSubmit} className="mb-4">
-        <div className="mb-4">
-          <label htmlFor="prompt" className="block mb-2">Enter your prompt:</label>
-          <textarea
-            id="prompt"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            className="w-full p-2 border rounded text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800"
-            rows={4}
-          />
-        </div>
-        
-        <div className="mb-4">
-          <label htmlFor="provider" className="block mb-2">Select Provider:</label>
-          <select
-            id="provider"
-            value={selectedProvider}
-            onChange={handleProviderChange}
-            className="w-full p-2 border rounded mb-2 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800"
-          >
-            {providerModels.map((pm) => (
-              <option key={pm.provider} value={pm.provider} className="text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800">
-                {pm.provider}
-              </option>
-            ))}
-          </select>
+      <TabSelector activeTab={activeTab} onTabChange={setActiveTab} />
 
-          <label htmlFor="model" className="block mb-2">Select LLM model:</label>
-          {isLoadingModels ? (
-            <p>Loading models...</p>
-          ) : providerModels.length > 0 ? (
-            <ModelSelector
-              models={filteredModels}
-              selectedModel={selectedModel}
-              onModelChange={handleModelChange}
-              className=""
-            />
-          ) : (
-            <p>No models available</p>
-          )}
-        </div>
-
-        {selectedProvider === 'OpenAI' && selectedModel === 'gpt-4o' && (
+      {activeTab === 'generate' ? (
+        <form 
+          onSubmit={handleSubmit} 
+          className="space-y-4" 
+          role="form"
+          aria-label="Generate AI Response"
+        >
           <div className="mb-4">
-            <label htmlFor="attachments" className="block mb-2">Upload Files:</label>
-            <input
-              type="file"
-              id="attachments"
-              multiple
-              onChange={handleFileChange}
+            <label htmlFor="prompt" className="block mb-2">Enter your prompt:</label>
+            <textarea
+              id="prompt"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
               className="w-full p-2 border rounded text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800"
+              rows={4}
             />
           </div>
-        )}
+          
+          <div className="mb-4">
+            <label htmlFor="provider" className="block mb-2">Select Provider:</label>
+            <select
+              id="provider"
+              value={selectedProvider}
+              onChange={handleProviderChange}
+              className="w-full p-2 border rounded mb-2 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800"
+            >
+              {providerModels.map((pm) => (
+                <option key={pm.provider} value={pm.provider} className="text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800">
+                  {pm.provider}
+                </option>
+              ))}
+            </select>
 
-        {selectedProvider !== 'OpenAI' || selectedModel !== 'gpt-4o' ? (
-          providerModels.find(pm => pm.provider === selectedProvider)?.models.find(m => m.name === selectedModel)?.supportsImages && (
+            <label htmlFor="model" className="block mb-2">Select LLM model:</label>
+            {isLoadingModels ? (
+              <p>Loading models...</p>
+            ) : providerModels.length > 0 ? (
+              <ModelSelector
+                models={filteredModels}
+                selectedModel={selectedModel}
+                onModelChange={handleModelChange}
+                className=""
+              />
+            ) : (
+              <p>No models available</p>
+            )}
+          </div>
+
+          {providerModels.find(pm => pm.provider === selectedProvider)
+            ?.models.find(m => m.name === selectedModel)
+            ?.supportsAttachments && (
+            <div className="mb-4">
+              <label htmlFor="attachments" className="block mb-2">Upload Files:</label>
+              <input
+                type="file"
+                id="attachments"
+                multiple
+                onChange={handleFileChange}
+                className="w-full p-2 border rounded text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800"
+              />
+            </div>
+          )}
+
+          {providerModels.find(pm => pm.provider === selectedProvider)
+            ?.models.find(m => m.name === selectedModel)
+            ?.supportsImages && !providerModels.find(pm => pm.provider === selectedProvider)
+            ?.models.find(m => m.name === selectedModel)
+            ?.supportsAttachments && (
             <>
               <ImageUpload onImageUpload={setUploadedImage} />
               {uploadedImage && <p className="mt-2 text-sm text-green-600">Image uploaded successfully</p>}
             </>
-          )
-        ) : null}
+          )}
 
-        <button 
-          type="submit" 
-          className="bg-blue-500 text-white px-4 py-2 rounded"
-          disabled={isLoading || isLoadingModels}
-        >
-          {isLoading ? 'Generating...' : 'Generate'}
-        </button>
-      </form>
-      
+          <button 
+            type="submit" 
+            className="bg-blue-500 text-white px-4 py-2 rounded"
+            disabled={isLoading || isLoadingModels}
+          >
+            {isLoading ? 'Generating...' : 'Generate'}
+          </button>
+        </form>
+      ) : (
+        <div>
+          <h2 className="text-2xl font-bold mb-4">Rank & Justify</h2>
+          <RankAndJustifyForm
+            providerModels={providerModels}
+            isLoadingModels={isLoadingModels}
+            onSubmit={handleRankAndJustifySubmit}
+          />
+          
+          {rankResult && (
+            <div className="mt-8">
+              <h3 className="text-xl font-bold mb-4">Analysis Results:</h3>
+              <div className="mb-4">
+                <h4 className="font-semibold mb-2">Scores:</h4>
+                <pre className="p-4 bg-white dark:bg-gray-800 rounded">
+                  {JSON.stringify(rankResult.aggregatedScore, null, 2)}
+                </pre>
+              </div>
+              <div>
+                <h4 className="font-semibold mb-2">Justification:</h4>
+                <pre className="p-4 bg-white dark:bg-gray-800 rounded whitespace-pre-wrap">
+                  {rankResult.justification}
+                </pre>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {result && (
         <div className="mb-4">
           <h2 className="text-xl font-bold mb-2">Result:</h2>

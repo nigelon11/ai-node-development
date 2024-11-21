@@ -53,28 +53,32 @@ export class OllamaProvider implements LLMProvider {
 async getModels(): Promise<Array<{ name: string; supportsImages: boolean }>> {
   try {
     const response = await fetch(`${this.baseUrl}/api/tags`);
-    
-    console.log('Ollama API response status:', response.status);
+    console.log('Ollama - Fetching models response:', response.status);
     
     if (!response.ok) {
       throw new Error(`Failed to fetch models: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
-    console.log('Ollama API response data:', data);
-
+    
     if (!data.models || !Array.isArray(data.models)) {
       throw new Error('Invalid data format: "models" array is missing.');
     }
 
-    const models = data.models.map((model: any) => ({
-      name: model.name,
-      supportsImages: model.details && 
-                      model.details.families && 
-                      model.details.families.includes('clip')
-    }));
+    const models = data.models.map((model: any) => {
+      const supportsImages = model.details?.families?.some((family: string) => 
+        ['clip', 'llava'].includes(family.toLowerCase())
+      );
+      console.log(`Ollama - Model ${model.name} details:`, {
+        families: model.details?.families,
+        supportsImages
+      });
+      return {
+        name: model.name,
+        supportsImages
+      };
+    });
 
-    console.log('Processed Ollama models:', models);
     return models;
   } catch (error) {
     console.error('Error fetching Ollama models:', error);
@@ -111,25 +115,41 @@ async supportsImages(model: string): Promise<boolean> {
 
   async generateResponseWithImage(prompt: string, model: string, base64Image: string): Promise<string> {
     const supportsImages = await this.supportsImages(model);
+    console.log('Ollama - Model supports images:', supportsImages);
+    console.log('Ollama - Model name:', model);
+    
     if (!supportsImages) {
       throw new Error(`Model ${model} does not support image inputs.`);
     }
 
     try {
+      console.log('Ollama - Preparing request payload');
+      const payload = {
+        model: model,
+        prompt: prompt,
+        images: [base64Image]
+      };
+      
+      console.log('Ollama - Request payload structure:', {
+        model: payload.model,
+        promptLength: payload.prompt.length,
+        imageDataLength: payload.images[0].length
+      });
+
       const response = await fetch(`${this.baseUrl}/api/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          model: model,
-          prompt: prompt,
-          images: [base64Image],
-        }),
+        body: JSON.stringify(payload)
       });
 
+      console.log('Ollama - Response status:', response.status);
+
       if (!response.ok) {
-        throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
+        const errorText = await response.text();
+        console.error('Ollama - Error response:', errorText);
+        throw new Error(`Ollama API error: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
       const reader = response.body?.getReader();
@@ -162,5 +182,11 @@ async supportsImages(model: string): Promise<boolean> {
       console.error('Error in OllamaProvider.generateResponseWithImage:', error);
       throw new Error(`Failed to generate response with image: ${error.message}`);
     }
+  }
+
+  supportsAttachments(model: string): boolean {
+    // For Ollama, we'll return false since it only supports single images
+    // through the generateResponseWithImage method
+    return false;
   }
 }

@@ -13,8 +13,9 @@ jest.mock("@langchain/anthropic", () => ({
 jest.mock('../../../config/models', () => ({
   modelConfig: {
     anthropic: [
-      { name: 'claude-2.1', supportsImages: false },
-      { name: 'claude-3-sonnet-20240229', supportsImages: true },
+      { name: 'claude-2.1', supportsImages: false, supportsAttachments: false },
+      { name: 'claude-3-sonnet-20240229', supportsImages: true, supportsAttachments: false },
+      { name: 'claude-3-5-sonnet-20241022', supportsImages: true, supportsAttachments: true },
     ],
   },
 }));
@@ -90,6 +91,50 @@ describe('AnthropicProvider', () => {
       'claude-2.1',
       'base64EncodedImageString'
     )).rejects.toThrow('Model claude-2.1 does not support image inputs.');
+  });
+
+  test('generateResponseWithAttachments returns expected response', async () => {
+    const mockInvoke = jest.fn().mockResolvedValue({ content: 'Mocked attachments response' });
+    (ChatAnthropic as jest.Mock).mockImplementation(() => ({
+      invoke: mockInvoke,
+    }));
+
+    const attachments = [
+      { type: 'image', content: 'base64EncodedImage1' },
+      { type: 'text', content: 'Some text attachment' }
+    ];
+
+    const response = await provider.generateResponseWithAttachments(
+      'Process these attachments',
+      'claude-3-5-sonnet-20241022',
+      attachments
+    );
+
+    expect(response).toBe('Mocked attachments response');
+    expect(ChatAnthropic).toHaveBeenCalledWith({
+      anthropicApiKey: 'test-anthropic-api-key',
+      modelName: 'claude-3-5-sonnet-20241022',
+    });
+    expect(mockInvoke).toHaveBeenCalledWith([
+      new HumanMessage({
+        content: [
+          { type: "text", text: 'Process these attachments' },
+          {
+            type: "image_url",
+            image_url: { url: 'data:image/jpeg;base64,base64EncodedImage1' }
+          },
+          { type: "text", text: 'Some text attachment' }
+        ],
+      }),
+    ]);
+  });
+
+  test('generateResponseWithAttachments throws error when model does not support attachments', async () => {
+    await expect(provider.generateResponseWithAttachments(
+      'Process these attachments',
+      'claude-2.1',
+      [{ type: 'image', content: 'base64EncodedImage' }]
+    )).rejects.toThrow('Model claude-2.1 does not support attachments.');
   });
 });
 
