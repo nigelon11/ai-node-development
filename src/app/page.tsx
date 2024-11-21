@@ -195,12 +195,7 @@ export default function Home() {
       <TabSelector activeTab={activeTab} onTabChange={setActiveTab} />
 
       {activeTab === 'generate' ? (
-        <form 
-          onSubmit={handleSubmit} 
-          className="space-y-4" 
-          role="form"
-          aria-label="Generate AI Response"
-        >
+        <form onSubmit={handleSubmit} className="space-y-6" aria-label="Generate AI Response">
           <div className="mb-4">
             <label htmlFor="prompt" className="block mb-2">Enter your prompt:</label>
             <textarea
@@ -275,6 +270,13 @@ export default function Home() {
           >
             {isLoading ? 'Generating...' : 'Generate'}
           </button>
+
+          {result && (
+            <div className="mb-4">
+              <h2 className="text-xl font-bold mb-2">Result:</h2>
+              <pre className="p-4 bg-white dark:bg-gray-800 rounded whitespace-pre-wrap text-gray-900 dark:text-gray-100">{result}</pre>
+            </div>
+          )}
         </form>
       ) : (
         <div>
@@ -302,13 +304,6 @@ export default function Home() {
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {result && (
-        <div className="mb-4">
-          <h2 className="text-xl font-bold mb-2">Result:</h2>
-          <pre className="p-4 bg-white dark:bg-gray-800 rounded whitespace-pre-wrap text-gray-900 dark:text-gray-100">{result}</pre>
         </div>
       )}
 
