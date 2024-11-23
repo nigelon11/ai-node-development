@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { LLMFactory } from '../../../lib/llm/llm-factory';
 import { prePromptConfig } from '../../../config/prePromptConfig';
+import { postPromptConfig } from '../../../config/postPromptConfig';
+import fs from 'fs';
+import path from 'path';
 
 // Load the justifier model name from environment variables
 const JUSTIFIER_MODEL = process.env.JUSTIFIER_MODEL || 'default-justifier-model';
@@ -19,6 +22,35 @@ interface InputData {
   iterations?: number;
   models: ModelInput[];
   attachments?: string[];
+}
+
+interface LLMProvider {
+  generateResponse: (prompt: string, model: string) => Promise<string>;
+  generateResponseWithAttachments?: (prompt: string, model: string, attachments: any[]) => Promise<string>;
+  supportsAttachments?: boolean;
+}
+
+function logInteraction(message: string) {
+  const timestamp = new Date().toISOString();
+  const logMessage = `[${timestamp}] ${message}\n`;
+  
+  // Log to console
+  console.log(logMessage);
+
+  // Log to file
+  const logDir = path.join(process.cwd(), 'logs');
+  const logFile = path.join(logDir, 'llm-interactions.log');
+
+  try {
+    // Create logs directory if it doesn't exist
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    
+    fs.appendFileSync(logFile, logMessage);
+  } catch (error) {
+    console.error('Error writing to log file:', error);
+  }
 }
 
 export async function POST(request: Request) {
@@ -58,12 +90,13 @@ export async function POST(request: Request) {
     }) || [];
 
     // Initialize data structures
-    const modelOutputs: number[][][] = []; // [modelIndex][iteration][outcomeIndex]
-    const V_average: number[][] = []; // [modelIndex][outcomeIndex]
+    const previousIterationResponses: string[] = [];
+    const modelOutputs: number[][][] = [];
+    const V_average: number[][] = [];
     const weights: number[] = [];
     const totalWeights = models.reduce((sum, m) => sum + m.weight, 0);
     const allJustifications: string[] = [];
-
+    
     // Validate total weights
     if (totalWeights <= 0 || totalWeights > models.length) {
       return NextResponse.json(
@@ -74,116 +107,122 @@ export async function POST(request: Request) {
 
     console.log('Starting model invocations');
 
+    let finalAggregatedScore: number[] = [];
+    let finalJustification: string = '';
+
     // Model Invocation
-    for (let j = 0; j < models.length; j++) {
-      const modelInfo = models[j];
-      const count = modelInfo.count || 1;
-      const weight = modelInfo.weight;
+    for (let i = 0; i < iterations; i++) {
+      console.log(`Starting iteration ${i + 1}`);
+      
+      const iterationOutputs: number[][] = [];
+      const iterationWeights: number[] = [];
+      const iterationJustifications: string[] = [];
 
-      console.log(`Processing model: ${modelInfo.provider} - ${modelInfo.model}`);
+      // Process each model for this iteration
+      for (let j = 0; j < models.length; j++) {
+        const modelInfo = models[j];
+        const count = modelInfo.count || 1;
+        const weight = modelInfo.weight;
+        const allOutputs: number[][] = [];
 
-      if (!modelInfo.provider || !modelInfo.model || weight < 0 || weight > 1) {
-        return NextResponse.json(
-          { error: 'Invalid model input. Check provider, model, and weight.' },
-          { status: 400 }
-        );
-      }
+        console.log(`Processing model: ${modelInfo.provider} - ${modelInfo.model}`);
 
-      const llmProvider = await LLMFactory.getProvider(modelInfo.provider);
-      if (!llmProvider) {
-        return NextResponse.json(
-          { error: `Unsupported provider: ${modelInfo.provider}` },
-          { status: 400 }
-        );
-      }
+        if (!modelInfo.provider || !modelInfo.model || weight < 0 || weight > 1) {
+          return NextResponse.json(
+            { error: 'Invalid model input. Check provider, model, and weight.' },
+            { status: 400 }
+          );
+        }
 
-      // Adjust the prompt with the pre-prompt
-      const fullPrompt = `${prePromptConfig.prompt}\n\n${prompt}`;
-      const supportsAttachments = await llmProvider.supportsAttachments(modelInfo.model);
+        const llmProvider = await LLMFactory.getProvider(modelInfo.provider) as LLMProvider;
+        if (!llmProvider) {
+          return NextResponse.json(
+            { error: `Unsupported provider: ${modelInfo.provider}` },
+            { status: 400 }
+          );
+        }
 
-      const allOutputs: number[][] = [];
+        // Construct the full prompt based on iteration
+        let iterationPrompt = `${prePromptConfig.prompt}\n\n${prompt}`;
+        
+        if (i > 0 && previousIterationResponses.length > 0) {
+          const previousResponsesText = previousIterationResponses.join('\n\n');
+          iterationPrompt = `${iterationPrompt}\n\n${postPromptConfig.prompt.replace('{{previousResponses}}', previousResponsesText)}`;
+        }
 
-      for (let i = 0; i < iterations; i++) {
-        console.log(`Iteration ${i + 1} for ${modelInfo.provider} - ${modelInfo.model}`);
         for (let c = 0; c < count; c++) {
           let responseText: string;
-          if (attachments.length > 0 && supportsAttachments) {
-            responseText = await llmProvider.generateResponseWithAttachments(
-              fullPrompt,
+          if (attachments.length > 0 && llmProvider.supportsAttachments) {
+            logInteraction(`Prompt to ${modelInfo.provider} - ${modelInfo.model} with attachments:\n${iterationPrompt}\n`);
+            responseText = await llmProvider.generateResponseWithAttachments!(
+              iterationPrompt,
               modelInfo.model,
               attachments
             );
+            logInteraction(`Response from ${modelInfo.provider} - ${modelInfo.model}:\n${responseText}\n`);
           } else {
+            logInteraction(`Prompt to ${modelInfo.provider} - ${modelInfo.model}:\n${iterationPrompt}\n`);
             responseText = await llmProvider.generateResponse(
-              fullPrompt,
+              iterationPrompt,
               modelInfo.model
             );
+            logInteraction(`Response from ${modelInfo.provider} - ${modelInfo.model}:\n${responseText}\n`);
           }
 
-          console.log(`Raw response from ${modelInfo.provider} - ${modelInfo.model}:`, responseText);
           const { decisionVector, justification } = parseModelResponse(responseText);
-
-          if (justification) {
-            allJustifications.push(`From model ${modelInfo.model}:\n${justification}`);
-          }
-
-          if (!decisionVector || !Array.isArray(decisionVector)) {
-            console.error(`Failed to parse decision vector from model ${modelInfo.model}`);
+          
+          if (!decisionVector) {
             return NextResponse.json(
-              { 
-                error: `Failed to parse decision vector from model ${modelInfo.model}. Response: ${responseText}` 
-              },
+              { error: `Failed to parse decision vector from model ${modelInfo.model}. Response: ${responseText}` },
               { status: 400 }
             );
           }
 
           allOutputs.push(decisionVector);
+          
+          if (justification) {
+            const formattedResponse = `From ${modelInfo.provider} - ${modelInfo.model}:\nScore: ${decisionVector}\nJustification: ${justification}`;
+            iterationJustifications.push(`From model ${modelInfo.model}:\n${justification}`);
+            
+            if (i < iterations - 1) {
+              previousIterationResponses.push(formattedResponse);
+            }
+          }
         }
+
+        // Average the outputs for this model if count > 1
+        const modelAverage = count > 1 
+          ? averageVectors(allOutputs)
+          : allOutputs[0];
+
+        iterationOutputs.push(modelAverage);
+        iterationWeights.push(weight);
       }
 
-      modelOutputs.push(allOutputs);
-      weights.push(weight);
+      // Compute weighted average for this iteration
+      finalAggregatedScore = computeAverageVectors(iterationOutputs, iterationWeights);
+
+      // Generate justification for the final iteration
+      if (i === iterations - 1) {
+        const justifierProvider = await LLMFactory.getProvider(justifierProviderName);
+        if (justifierProvider) {
+          logInteraction(`Prompt to Justifier:\n${prompt}\n`);
+          finalJustification = await generateJustification(
+            finalAggregatedScore,
+            iterationJustifications,
+            justifierProvider,
+            justifierModelName
+          );
+          logInteraction(`Response from Justifier:\n${finalJustification}\n`);
+        }
+      }
     }
 
-    // Compute average decision vector for each model
-    for (let j = 0; j < models.length; j++) {
-      const outputs = modelOutputs[j];
-      const count = outputs.length;
-      const sumVector = outputs.reduce((acc, vec) => {
-        return vec.map((val, idx) => (acc[idx] || 0) + val);
-      }, []);
-      const avgVector = sumVector.map((val) => val / count);
-      V_average.push(avgVector);
-    }
-
-    // Compute total decision vector
-    const V_total = V_average[0].map((_, idx) => {
-      return V_average.reduce((sum, v_avg, j) => {
-        return sum + v_avg[idx] * weights[j];
-      }, 0);
-    });
-
-    // Get justification from the justifier model
-    const justifierProvider = await LLMFactory.getProvider(justifierProviderName);
-    if (!justifierProvider) {
-      return NextResponse.json(
-        { error: `Unsupported justifier provider: ${justifierProviderName}` },
-        { status: 400 }
-      );
-    }
-
-    const justification = await generateJustification(
-      V_total,
-      allJustifications,
-      justifierProvider,
-      justifierModelName
-    );
-
-    // Return the final response
     return NextResponse.json({
-      aggregatedScore: V_total,
-      justification
+      aggregatedScore: finalAggregatedScore,
+      justification: finalJustification
     });
+
   } catch (error) {
     console.error('Error in POST /api/rank-and-justify:', error);
     return NextResponse.json(
@@ -248,4 +287,36 @@ function determineAttachmentType(content: string): string {
     return 'image';
   }
   return 'text';
+}
+
+// Helper function to compute average vectors
+function computeAverageVectors(vectors: number[][], weights: number[]): number[] {
+  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+  const dimensions = vectors[0].length;
+  const result = new Array(dimensions).fill(0);
+
+  for (let i = 0; i < vectors.length; i++) {
+    for (let j = 0; j < dimensions; j++) {
+      result[j] += (vectors[i][j] * weights[Math.floor(i / (vectors.length / weights.length))]) / totalWeight;
+    }
+  }
+
+  return result;
+}
+
+function averageVectors(vectors: number[][]): number[] {
+  const dimensions = vectors[0].length;
+  const result = new Array(dimensions).fill(0);
+  
+  for (let i = 0; i < vectors.length; i++) {
+    for (let j = 0; j < dimensions; j++) {
+      result[j] += vectors[i][j];
+    }
+  }
+  
+  for (let j = 0; j < dimensions; j++) {
+    result[j] = Math.floor(result[j] / vectors.length);
+  }
+  
+  return result;
 }
