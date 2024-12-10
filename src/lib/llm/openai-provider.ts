@@ -6,6 +6,7 @@
  * and generating responses to prompts.
  */
 
+import 'openai/shims/node';
 import { LLMProvider } from './llm-provider-interface';
 import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage } from '@langchain/core/messages';
