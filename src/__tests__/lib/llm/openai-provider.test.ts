@@ -1,3 +1,5 @@
+import 'openai/shims/node';  
+
 import { OpenAIProvider } from '../../../lib/llm/openai-provider';
 import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage } from '@langchain/core/messages';
