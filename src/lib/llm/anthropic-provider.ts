@@ -53,13 +53,16 @@ export class AnthropicProvider implements LLMProvider {
       modelName: model,
     });
 
+    // Create a data URL from the base64 image
+    const dataUrl = `data:image/jpeg;base64,${base64Image}`;
+
     const message = new HumanMessage({
       content: [
         { type: "text", text: prompt },
         {
           type: "image_url",
-          image_url: { url: `data:image/jpeg;base64,${base64Image}` },
-        },
+          image_url: { url: dataUrl }
+        }
       ],
     });
 
