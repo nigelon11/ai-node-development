@@ -133,25 +133,31 @@ export async function POST(request: Request) {
     })));
 
     if (attachments.length > 0) {
-      const supportsImages = await provider.supportsImages(modelName);
-      const supportsAttachments = await provider.supportsAttachments(modelName);
-      
-      console.log('Model supports images:', supportsImages);
-      console.log('Model supports attachments:', supportsAttachments);
-      
-      if (supportsAttachments) {
-        console.log('Calling generateResponseWithAttachments');
-        response = await provider.generateResponseWithAttachments(prompt, modelName, attachments);
-      } else if (supportsImages && attachments.length === 1 && attachments[0].type === 'image') {
-        console.log('Calling generateResponseWithImage');
-        console.log('Calling generateResponseWithImage with:', {
-          promptLength: prompt.length,
-          modelName,
-          imageContentLength: attachments[0].content.length
-        });
-        response = await provider.generateResponseWithImage(prompt, modelName, attachments[0].content);
-      } else {
-        throw new Error(`Model ${modelName} does not support the provided attachments configuration`);
+      try {
+        const supportsImages = await provider.supportsImages(modelName);
+        const supportsAttachments = await provider.supportsAttachments(modelName);
+        
+        if (supportsAttachments) {
+          response = await provider.generateResponseWithAttachments(prompt, modelName, attachments);
+        } else if (supportsImages && attachments.length === 1 && attachments[0].type === 'image') {
+          response = await provider.generateResponseWithImage(
+            prompt,
+            modelName,
+            attachments[0].content,
+            attachments[0].mediaType
+          );
+        } else {
+          return NextResponse.json(
+            { error: `Model ${modelName} does not support the provided attachments configuration` },
+            { status: 400 }
+          );
+        }
+      } catch (error) {
+        // Return specific error messages for known error types
+        return NextResponse.json(
+          { error: error.message },
+          { status: 400 }
+        );
       }
     } else {
       response = await provider.generateResponse(prompt, modelName);
@@ -160,9 +166,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ result: response });
   } catch (error) {
     console.error('Error in POST /api/generate:', error);
+    
+    // Return specific error message if available, fallback to generic message
+    const errorMessage = error.message || 'An error occurred while generating the response.';
     return NextResponse.json(
-      { error: 'An error occurred while generating the response.' },
-      { status: 500 }
+      { error: errorMessage },
+      { status: error.status || 500 }
     );
   }
 }

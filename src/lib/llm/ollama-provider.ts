@@ -9,6 +9,9 @@
 import { LLMProvider } from './llm-provider-interface';
 import { ChatOllama } from "@langchain/ollama";
 
+const SUPPORTED_IMAGE_FORMATS = ['image/jpeg', 'image/png']; // Most Ollama vision models support these formats
+const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB limit for consistency
+
 /**
  * OllamaProvider class
  * 
@@ -17,6 +20,7 @@ import { ChatOllama } from "@langchain/ollama";
  */
 export class OllamaProvider implements LLMProvider {
   private baseUrl: string;
+  private readonly providerName = 'Ollama';
   private models: Array<{ name: string; supportsImages: boolean }> = [];
   private modelsInitialized: Promise<void>;
 
@@ -113,17 +117,25 @@ async supportsImages(model: string): Promise<boolean> {
     }
   }
 
-  async generateResponseWithImage(prompt: string, model: string, base64Image: string): Promise<string> {
+  async generateResponseWithImage(prompt: string, model: string, base64Image: string, mediaType: string = 'image/jpeg'): Promise<string> {
+    // Do all validations first, before any API calls
     const supportsImages = await this.supportsImages(model);
-    console.log('Ollama - Model supports images:', supportsImages);
-    console.log('Ollama - Model name:', model);
-    
     if (!supportsImages) {
-      throw new Error(`Model ${model} does not support image inputs.`);
+      throw new Error(`[${this.providerName}] Model ${model} does not support image inputs.`);
     }
 
+    if (!SUPPORTED_IMAGE_FORMATS.includes(mediaType)) {
+      throw new Error(`[${this.providerName}] Unsupported image format: ${mediaType}. Only JPEG and PNG formats are supported.`);
+    }
+
+    // Check file size
+    const approximateFileSize = base64Image.length * 0.75;
+    if (approximateFileSize > MAX_FILE_SIZE) {
+      throw new Error(`[${this.providerName}] Image file size must be under 20 MB.`);
+    }
+
+    console.log('Preparing request payload');
     try {
-      console.log('Ollama - Preparing request payload');
       const payload = {
         model: model,
         prompt: prompt,
@@ -180,8 +192,23 @@ async supportsImages(model: string): Promise<boolean> {
       return fullResponse.trim();
     } catch (error) {
       console.error('Error in OllamaProvider.generateResponseWithImage:', error);
-      throw new Error(`Failed to generate response with image: ${error.message}`);
+      throw error; // Re-throw the original error instead of wrapping it
     }
+  }
+
+  async generateResponseWithAttachments(prompt: string, model: string, attachments: Array<{ type: string, content: string, mediaType: string }>): Promise<string> {
+    const imageAttachments = attachments.filter(att => att.type === 'image');
+    if (imageAttachments.length > 1) {
+      throw new Error(`[${this.providerName}] Model ${model} only supports a single image input`);
+    }
+
+    if (imageAttachments.length === 1) {
+      const imageAttachment = imageAttachments[0];
+      return this.generateResponseWithImage(prompt, model, imageAttachment.content, imageAttachment.mediaType);
+    }
+
+    // If no images, fall back to text-only response
+    return this.generateResponse(prompt, model);
   }
 
   supportsAttachments(model: string): boolean {

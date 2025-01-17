@@ -12,6 +12,9 @@ import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage } from '@langchain/core/messages';
 import { modelConfig } from '../../config/models';
 
+const SUPPORTED_IMAGE_FORMATS = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB in bytes
+
 /**
  * OpenAIProvider class
  * 
@@ -20,6 +23,7 @@ import { modelConfig } from '../../config/models';
  */
 export class OpenAIProvider implements LLMProvider {
   private apiKey: string;
+  private readonly providerName = 'OpenAI';
   private models: Array<{ name: string; supportsImages: boolean; supportsAttachments: boolean }>;
 
   /**
@@ -79,7 +83,19 @@ export class OpenAIProvider implements LLMProvider {
     return response.content;
   }
 
-  async generateResponseWithImage(prompt: string, model: string, base64Image: string): Promise<string> {
+  async generateResponseWithImage(prompt: string, model: string, base64Image: string, mediaType: string = 'image/jpeg'): Promise<string> {
+    if (!this.supportsImages(model)) {
+      throw new Error(`[${this.providerName}] Model ${model} does not support image inputs.`);
+    }
+    if (!SUPPORTED_IMAGE_FORMATS.includes(mediaType)) {
+      throw new Error(`[${this.providerName}] Model ${model}: Unsupported image format: ${mediaType}. Supported formats are: JPEG, PNG, GIF, and WEBP.`);
+    }
+
+    const approximateFileSize = base64Image.length * 0.75;
+    if (approximateFileSize > MAX_FILE_SIZE) {
+      throw new Error(`[${this.providerName}] Model ${model}: Image file size must be under 20 MB.`);
+    }
+
     const openai = new ChatOpenAI({
       openAIApiKey: this.apiKey,
       modelName: model,
@@ -91,7 +107,7 @@ export class OpenAIProvider implements LLMProvider {
           { type: "text", text: prompt },
           {
             type: "image_url",
-            image_url: { url: `data:image/jpeg;base64,${base64Image}` }
+            image_url: { url: `data:${mediaType};base64,${base64Image}` }
           }
         ]
       })
@@ -103,11 +119,27 @@ export class OpenAIProvider implements LLMProvider {
     return response.content;
   }
 
-  async generateResponseWithAttachments(prompt: string, model: string, attachments: Array<{ type: string, content: string }>): Promise<string> {
+  async generateResponseWithAttachments(prompt: string, model: string, attachments: Array<{ type: string, content: string, mediaType: string }>): Promise<string> {
     const openai = new ChatOpenAI({
       openAIApiKey: this.apiKey,
       modelName: model,
     });
+
+    // Validate image attachments
+    for (const attachment of attachments) {
+      if (attachment.type === 'image') {
+        if (!this.supportsImages(model)) {
+          throw new Error(`[${this.providerName}] Model ${model} does not support image inputs.`);
+        }
+        if (!SUPPORTED_IMAGE_FORMATS.includes(attachment.mediaType)) {
+          throw new Error(`[${this.providerName}] Model ${model}: Unsupported image format: ${attachment.mediaType}. Supported formats are: JPEG, PNG, GIF, and WEBP.`);
+        }
+        const approximateFileSize = attachment.content.length * 0.75;
+        if (approximateFileSize > MAX_FILE_SIZE) {
+          throw new Error(`[${this.providerName}] Model ${model}: Image file size must be under 20 MB.`);
+        }
+      }
+    }
 
     const messageContent = [
       { type: "text", text: prompt },
@@ -115,7 +147,7 @@ export class OpenAIProvider implements LLMProvider {
         if (attachment.type === "image") {
           return {
             type: "image_url",
-            image_url: { url: `data:image/jpeg;base64,${attachment.content}` }
+            image_url: { url: `data:${attachment.mediaType};base64,${attachment.content}` }
           };
         } else {
           return { type: "text", text: attachment.content };

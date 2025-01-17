@@ -159,6 +159,7 @@ export default function Home() {
   }) => {
     setIsLoading(true);
     setRankResult(null);
+    setResult('');
 
     try {
       const response = await fetch('/api/rank-and-justify', {
@@ -169,16 +170,20 @@ export default function Home() {
         body: JSON.stringify(data),
       });
 
+      const resultData = await response.json().catch(() => ({ error: 'Failed to parse response' }));
+      console.log('Response status:', response.status, 'Result:', resultData);
+      
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        const errorMessage = resultData.error || `Request failed with status ${response.status}`;
+        console.error('Error details:', errorMessage);
+        setResult(errorMessage);
+        return;
       }
 
-      const result = await response.json();
-      setRankResult(result);
+      setRankResult(resultData);
     } catch (error) {
-      console.error('Error:', error);
-      setResult(error instanceof Error ? `Error: ${error.message}` : 'An unknown error occurred');
+      console.error('Network or parsing error:', error);
+      setResult('Failed to process request. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -287,6 +292,14 @@ export default function Home() {
             onSubmit={handleRankAndJustifySubmit}
           />
           
+          {result && (
+            <div className="mb-4">
+              <pre className="p-4 bg-red-100 dark:bg-red-800 rounded whitespace-pre-wrap text-red-900 dark:text-red-100">
+                {result}
+              </pre>
+            </div>
+          )}
+
           {rankResult && (
             <div className="mt-8">
               <h3 className="text-xl font-bold mb-4">Analysis Results:</h3>

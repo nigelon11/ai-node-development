@@ -251,7 +251,8 @@ describe('/api/generate', () => {
     expect(mockProvider.generateResponseWithImage).toHaveBeenCalledWith(
       'Describe this image',
       'gpt-4o',
-      'base64EncodedImageData'
+      'base64EncodedImageData',
+      'image/jpeg'
     );
     expect(fileUtils.fileToBase64).toHaveBeenCalledWith(imageFile);
 

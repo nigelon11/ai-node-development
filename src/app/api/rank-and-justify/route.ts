@@ -134,69 +134,94 @@ export async function POST(request: Request) {
           );
         }
 
-        const llmProvider = await LLMFactory.getProvider(modelInfo.provider) as LLMProvider;
-        if (!llmProvider) {
-          return NextResponse.json(
-            { error: `Unsupported provider: ${modelInfo.provider}` },
-            { status: 400 }
-          );
-        }
-
-        // Construct the full prompt based on iteration
-        let iterationPrompt = `${prePromptConfig.prompt}\n\n${prompt}`;
-        
-        if (i > 0 && previousIterationResponses.length > 0) {
-          const previousResponsesText = previousIterationResponses.join('\n\n');
-          iterationPrompt = `${iterationPrompt}\n\n${postPromptConfig.prompt.replace('{{previousResponses}}', previousResponsesText)}`;
-        }
-
-        for (let c = 0; c < count; c++) {
-          let responseText: string;
-          if (attachments.length > 0 && llmProvider.supportsAttachments) {
-            logInteraction(`Prompt to ${modelInfo.provider} - ${modelInfo.model} with attachments:\n${iterationPrompt}\n`);
-            responseText = await llmProvider.generateResponseWithAttachments!(
-              iterationPrompt,
-              modelInfo.model,
-              attachments
-            );
-            logInteraction(`Response from ${modelInfo.provider} - ${modelInfo.model}:\n${responseText}\n`);
-          } else {
-            logInteraction(`Prompt to ${modelInfo.provider} - ${modelInfo.model}:\n${iterationPrompt}\n`);
-            responseText = await llmProvider.generateResponse(
-              iterationPrompt,
-              modelInfo.model
-            );
-            logInteraction(`Response from ${modelInfo.provider} - ${modelInfo.model}:\n${responseText}\n`);
-          }
-
-          const { decisionVector, justification } = parseModelResponse(responseText);
-          
-          if (!decisionVector) {
+        try {
+          const llmProvider = await LLMFactory.getProvider(modelInfo.provider) as LLMProvider;
+          if (!llmProvider) {
             return NextResponse.json(
-              { error: `Failed to parse decision vector from model ${modelInfo.model}. Response: ${responseText}` },
+              { error: `Unsupported provider: ${modelInfo.provider}` },
               { status: 400 }
             );
           }
 
-          allOutputs.push(decisionVector);
+          // Construct the full prompt based on iteration
+          let iterationPrompt = `${prePromptConfig.prompt}\n\n${prompt}`;
           
-          if (justification) {
-            const formattedResponse = `From ${modelInfo.provider} - ${modelInfo.model}:\nScore: ${decisionVector}\nJustification: ${justification}`;
-            iterationJustifications.push(`From model ${modelInfo.model}:\n${justification}`);
+          if (i > 0 && previousIterationResponses.length > 0) {
+            const previousResponsesText = previousIterationResponses.join('\n\n');
+            iterationPrompt = `${iterationPrompt}\n\n${postPromptConfig.prompt.replace('{{previousResponses}}', previousResponsesText)}`;
+          }
+
+          for (let c = 0; c < count; c++) {
+            let responseText: string;
+            if (attachments.length > 0 && llmProvider.supportsAttachments) {
+              logInteraction(`Prompt to ${modelInfo.provider} - ${modelInfo.model} with attachments:\n${iterationPrompt}\n`);
+              try {
+                responseText = await llmProvider.generateResponseWithAttachments!(
+                  iterationPrompt,
+                  modelInfo.model,
+                  attachments
+                );
+                logInteraction(`Response from ${modelInfo.provider} - ${modelInfo.model}:\n${responseText}\n`);
+              } catch (providerError: any) {
+                console.error(`Provider error from ${modelInfo.provider}/${modelInfo.model}:`, providerError);
+                // Instead of returning right away, rethrow with provider info
+                throw new Error(
+                  `Error from ${modelInfo.provider}/${modelInfo.model}: ${providerError.message}`
+                );
+              }
+            } else {
+              logInteraction(`Prompt to ${modelInfo.provider} - ${modelInfo.model}:\n${iterationPrompt}\n`);
+              try {
+                responseText = await llmProvider.generateResponse(
+                  iterationPrompt,
+                  modelInfo.model
+                );
+                logInteraction(`Response from ${modelInfo.provider} - ${modelInfo.model}:\n${responseText}\n`);
+              } catch (providerError: any) {
+                console.error(`Provider error from ${modelInfo.provider}/${modelInfo.model}:`, providerError);
+                throw new Error(
+                  `Error from ${modelInfo.provider}/${modelInfo.model}: ${providerError.message}`
+                );
+              }
+            }
+
+            const { decisionVector, justification } = parseModelResponse(responseText);
             
-            if (i < iterations - 1) {
-              previousIterationResponses.push(formattedResponse);
+            if (!decisionVector) {
+              return NextResponse.json(
+                { error: `Failed to parse decision vector from model ${modelInfo.model}. Response: ${responseText}` },
+                { status: 400 }
+              );
+            }
+
+            allOutputs.push(decisionVector);
+            
+            if (justification) {
+              const formattedResponse = `From ${modelInfo.provider} - ${modelInfo.model}:\nScore: ${decisionVector}\nJustification: ${justification}`;
+              iterationJustifications.push(`From model ${modelInfo.model}:\n${justification}`);
+              
+              if (i < iterations - 1) {
+                previousIterationResponses.push(formattedResponse);
+              }
             }
           }
+
+          // Average the outputs for this model if count > 1
+          const modelAverage = count > 1 
+            ? averageVectors(allOutputs)
+            : allOutputs[0];
+
+          iterationOutputs.push(modelAverage);
+          iterationWeights.push(weight);
+        } catch (error: any) {
+          // If we get here, a provider or parsing error occurred. 
+          // Return immediately with the error text.  
+          console.error('Caught provider error in route:', error);
+          return NextResponse.json(
+            { error: error.message },
+            { status: 400 }
+          );
         }
-
-        // Average the outputs for this model if count > 1
-        const modelAverage = count > 1 
-          ? averageVectors(allOutputs)
-          : allOutputs[0];
-
-        iterationOutputs.push(modelAverage);
-        iterationWeights.push(weight);
       }
 
       // Compute weighted average for this iteration
@@ -223,11 +248,13 @@ export async function POST(request: Request) {
       justification: finalJustification
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in POST /api/rank-and-justify:', error);
+    // If it's a provider error, we want to surface that as a 400
+    // Otherwise, handle it as a 500.
     return NextResponse.json(
-      { error: 'An error occurred while processing the request.' },
-      { status: 500 }
+      { error: error.message || 'An error occurred while processing the request.' },
+      { status: 400 }
     );
   }
 }
@@ -280,14 +307,6 @@ export async function generateJustification(
   const response = await justifierProvider.generateResponse(prompt, justifierModel);
   return response;
 }
-// Helper function to determine attachment type
-function determineAttachmentType(content: string): string {
-  // Check if the content is a base64 image
-  if (content.startsWith('data:image')) {
-    return 'image';
-  }
-  return 'text';
-}
 
 // Helper function to compute average vectors
 function computeAverageVectors(vectors: number[][], weights: number[]): number[] {
@@ -297,6 +316,7 @@ function computeAverageVectors(vectors: number[][], weights: number[]): number[]
 
   for (let i = 0; i < vectors.length; i++) {
     for (let j = 0; j < dimensions; j++) {
+      // Weighted accumulation
       result[j] += (vectors[i][j] * weights[Math.floor(i / (vectors.length / weights.length))]) / totalWeight;
     }
   }

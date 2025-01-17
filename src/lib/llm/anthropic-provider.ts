@@ -4,8 +4,11 @@ import { ChatAnthropic } from "@langchain/anthropic";
 import { HumanMessage } from '@langchain/core/messages';
 import { modelConfig } from '../../config/models';
 
+const SUPPORTED_IMAGE_FORMATS = ['image/jpeg', 'image/png'];
+
 export class AnthropicProvider implements LLMProvider {
   private apiKey: string;
+  private readonly providerName = 'Anthropic';
   private models: Array<{ name: string; supportsImages: boolean; supportsAttachments: boolean }>;
 
   constructor(apiKey: string = process.env.ANTHROPIC_API_KEY || '') {
@@ -40,12 +43,15 @@ export class AnthropicProvider implements LLMProvider {
     return response.content;
   }
 
-  async generateResponseWithImage(prompt: string, model: string, base64Image: string): Promise<string> {
+  async generateResponseWithImage(prompt: string, model: string, base64Image: string, mediaType: string = 'image/jpeg'): Promise<string> {
     if (!this.supportsImages(model)) {
-      throw new Error(`Model ${model} does not support image inputs.`);
+      throw new Error(`[${this.providerName}] Model ${model} does not support image inputs.`);
     }
     if (!this.apiKey) {
-      throw new Error('ANTHROPIC_API_KEY is not set');
+      throw new Error(`[${this.providerName}] ANTHROPIC_API_KEY is not set`);
+    }
+    if (!SUPPORTED_IMAGE_FORMATS.includes(mediaType)) {
+      throw new Error(`[${this.providerName}] Model ${model}: Unsupported image format: ${mediaType}. Only JPEG and PNG formats are supported.`);
     }
 
     const anthropic = new ChatAnthropic({
@@ -53,8 +59,7 @@ export class AnthropicProvider implements LLMProvider {
       modelName: model,
     });
 
-    // Create a data URL from the base64 image
-    const dataUrl = `data:image/jpeg;base64,${base64Image}`;
+    const dataUrl = `data:${mediaType};base64,${base64Image}`;
 
     const message = new HumanMessage({
       content: [
@@ -79,24 +84,23 @@ export class AnthropicProvider implements LLMProvider {
     return Promise.resolve();
   }
 
-  async generateResponseWithAttachments(prompt: string, model: string, attachments: Array<{ type: string, content: string }>): Promise<string> {
+  async generateResponseWithAttachments(prompt: string, model: string, attachments: Array<{ type: string, content: string, mediaType: string }>): Promise<string> {
     if (!this.supportsAttachments(model)) {
-      throw new Error(`Model ${model} does not support attachments.`);
+      throw new Error(`[${this.providerName}] Model ${model} does not support attachments.`);
     }
     if (!this.apiKey) {
-      throw new Error('ANTHROPIC_API_KEY is not set');
+      throw new Error(`[${this.providerName}] ANTHROPIC_API_KEY is not set`);
     }
 
-    console.log('Anthropic generateResponseWithAttachments - Model:', model);
-    console.log('Anthropic generateResponseWithAttachments - Number of attachments:', attachments.length);
+    for (const attachment of attachments) {
+      if (attachment.type === 'image' && !SUPPORTED_IMAGE_FORMATS.includes(attachment.mediaType)) {
+        throw new Error(`[${this.providerName}] Model ${model}: Unsupported image format: ${attachment.mediaType}. Only JPEG and PNG formats are supported.`);
+      }
+    }
 
     const anthropic = new ChatAnthropic({
       anthropicApiKey: this.apiKey,
       modelName: model,
-    });
-
-    attachments.forEach((attachment, index) => {
-      console.log(`Processing attachment ${index}: ${attachment.type}`);
     });
 
     const messageContent = [
@@ -105,7 +109,7 @@ export class AnthropicProvider implements LLMProvider {
         if (attachment.type === "image") {
           return {
             type: "image_url",
-            image_url: { url: `data:image/jpeg;base64,${attachment.content}` }
+            image_url: { url: `data:${attachment.mediaType};base64,${attachment.content}` }
           };
         } else {
           return { type: "text", text: attachment.content };
@@ -113,15 +117,11 @@ export class AnthropicProvider implements LLMProvider {
       })
     ];
 
-    console.log('Message structure types:', messageContent.map(content => content.type));
-
     const message = new HumanMessage({
       content: messageContent
     });
 
     const response = await anthropic.invoke([message]);
-
-    console.log('Anthropic response type:', typeof response.content);
 
     if (typeof response.content !== 'string') {
       throw new Error('Unexpected response format from Anthropic');
