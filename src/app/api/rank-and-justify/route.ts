@@ -57,6 +57,12 @@ export async function POST(request: Request) {
   try {
     console.log('POST request received at /api/rank-and-justify');
     const body: InputData = await request.json();
+    console.log('Request body:', {
+      prompt: body.prompt,
+      models: body.models,
+      hasAttachments: body.attachments?.length > 0,
+      attachmentsCount: body.attachments?.length
+    });
 
     // Input validation
     if (!body.prompt || !Array.isArray(body.models) || body.models.length === 0) {
@@ -71,10 +77,35 @@ export async function POST(request: Request) {
     const models = body.models;
 
     // Process attachments if they exist
-    const attachments = body.attachments?.map(content => {
+    if (body.attachments?.length) {
+      console.log('Processing attachments...');
+      body.attachments.forEach((content, index) => {
+        console.log(`Attachment ${index + 1}:`);
+        console.log('- Content type:', typeof content);
+        if (typeof content === 'string') {
+          console.log('- Starts with:', content.substring(0, 50) + '...');
+          if (content.startsWith('data:')) {
+            const mediaTypeMatch = content.match(/^data:([^;]+);base64,/);
+            console.log('- Media type:', mediaTypeMatch ? mediaTypeMatch[1] : 'unknown');
+          } else {
+            console.log('- WARNING: Attachment does not start with data: URI scheme');
+          }
+        } else {
+          console.log('- WARNING: Attachment is not a string');
+        }
+      });
+    }
+
+    const attachments = body.attachments?.map((content, index) => {
       if (content.startsWith('data:image')) {
         const mediaTypeMatch = content.match(/^data:([^;]+);base64,/);
         const mediaType = mediaTypeMatch ? mediaTypeMatch[1] : 'image/jpeg';
+        console.log(`Processing image attachment ${index + 1}:`, {
+          mediaType,
+          contentLength: content.length,
+          isBase64: content.includes(';base64,')
+        });
+        
         const base64Data = content.replace(/^data:image\/[^;]+;base64,/, '');
         return {
           type: 'image',
@@ -82,12 +113,23 @@ export async function POST(request: Request) {
           mediaType: mediaType
         };
       }
+      console.log(`Processing non-image attachment ${index + 1}:`, {
+        type: 'text',
+        contentLength: content.length
+      });
       return {
         type: 'text',
         content: content,
         mediaType: 'text/plain'
       };
     }) || [];
+
+    // Log processed attachments summary
+    console.log('Processed attachments summary:', attachments.map(att => ({
+      type: att.type,
+      mediaType: att.mediaType,
+      contentLength: att.content.length
+    })));
 
     // Initialize data structures
     const previousIterationResponses: string[] = [];
@@ -151,6 +193,16 @@ export async function POST(request: Request) {
             iterationPrompt = `${iterationPrompt}\n\n${postPromptConfig.prompt.replace('{{previousResponses}}', previousResponsesText)}`;
           }
 
+          if (attachments.length > 0) {
+            console.log(`Sending ${attachments.length} attachments to ${modelInfo.provider}:`, 
+              attachments.map(att => ({
+                type: att.type,
+                mediaType: att.mediaType,
+                contentLength: att.content.length
+              }))
+            );
+          }
+
           for (let c = 0; c < count; c++) {
             let responseText: string;
             if (attachments.length > 0 && llmProvider.supportsAttachments) {
@@ -163,10 +215,18 @@ export async function POST(request: Request) {
                 );
                 logInteraction(`Response from ${modelInfo.provider} - ${modelInfo.model}:\n${responseText}\n`);
               } catch (providerError: any) {
-                console.error(`Provider error from ${modelInfo.provider}/${modelInfo.model}:`, providerError);
-                // Instead of returning right away, rethrow with provider info
-                throw new Error(
-                  `Error from ${modelInfo.provider}/${modelInfo.model}: ${providerError.message}`
+                console.error(`Provider error from ${modelInfo.provider}/${modelInfo.model}:`, {
+                  error: providerError.message,
+                  stack: providerError.stack,
+                  attachments: attachments.length > 0 ? 'Has attachments' : 'No attachments'
+                });
+                return new Response(
+                  JSON.stringify({
+                    error: providerError.message,
+                    provider: modelInfo.provider,
+                    model: modelInfo.model
+                  }),
+                  { status: 400, headers: { 'Content-Type': 'application/json' } }
                 );
               }
             } else {
@@ -178,9 +238,18 @@ export async function POST(request: Request) {
                 );
                 logInteraction(`Response from ${modelInfo.provider} - ${modelInfo.model}:\n${responseText}\n`);
               } catch (providerError: any) {
-                console.error(`Provider error from ${modelInfo.provider}/${modelInfo.model}:`, providerError);
-                throw new Error(
-                  `Error from ${modelInfo.provider}/${modelInfo.model}: ${providerError.message}`
+                console.error(`Provider error from ${modelInfo.provider}/${modelInfo.model}:`, {
+                  error: providerError.message,
+                  stack: providerError.stack,
+                  attachments: attachments.length > 0 ? 'Has attachments' : 'No attachments'
+                });
+                return new Response(
+                  JSON.stringify({
+                    error: providerError.message,
+                    provider: modelInfo.provider,
+                    model: modelInfo.model
+                  }),
+                  { status: 400, headers: { 'Content-Type': 'application/json' } }
                 );
               }
             }
@@ -249,12 +318,16 @@ export async function POST(request: Request) {
     });
 
   } catch (error: any) {
-    console.error('Error in POST /api/rank-and-justify:', error);
-    // If it's a provider error, we want to surface that as a 400
-    // Otherwise, handle it as a 500.
-    return NextResponse.json(
-      { error: error.message || 'An error occurred while processing the request.' },
-      { status: 400 }
+    console.error('Error in POST /api/rank-and-justify:', {
+      error: error.message,
+      stack: error.stack,
+      type: error.constructor.name
+    });
+    return new Response(
+      JSON.stringify({
+        error: error.message || 'An error occurred while processing the request.'
+      }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 }
