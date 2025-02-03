@@ -21,7 +21,7 @@ const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB limit for consistency
 export class OllamaProvider implements LLMProvider {
   private baseUrl: string;
   private readonly providerName = 'Ollama';
-  private models: Array<{ name: string; supportsImages: boolean }> = [];
+  private models: Array<{ name: string; supportsImages: boolean; supportsAttachments: boolean }> = [];
   private modelsInitialized: Promise<void>;
 
   /**
@@ -40,9 +40,36 @@ export class OllamaProvider implements LLMProvider {
 
   private async initializeModels() {
     try {
-      this.models = await this.getModels();
+      const response = await fetch(`${this.baseUrl}/api/tags`);
+      console.log('Ollama - Fetching models response:', response.status);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch models: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      if (!data.models || !Array.isArray(data.models)) {
+        throw new Error('Invalid data format: "models" array is missing.');
+      }
+
+      this.models = data.models.map((model: any) => {
+        const supportsImages = model.details?.families?.some((family: string) => 
+          ['clip', 'llava'].includes(family.toLowerCase())
+        );
+        console.log(`Ollama - Model ${model.name} details:`, {
+          families: model.details?.families,
+          supportsImages
+        });
+        return {
+          name: model.name,
+          supportsImages,
+          supportsAttachments: supportsImages // For Ollama, attachment support is equivalent to image support
+        };
+      });
     } catch (error) {
-      console.error('Failed to initialize models:', error);
+      console.error('Error fetching Ollama models:', error);
+      this.models = [];
     }
   }
 
@@ -53,47 +80,14 @@ export class OllamaProvider implements LLMProvider {
    *          represents the name of an available model.
    * @throws Will throw an error if the API request fails.
    */
-
-async getModels(): Promise<Array<{ name: string; supportsImages: boolean }>> {
-  try {
-    const response = await fetch(`${this.baseUrl}/api/tags`);
-    console.log('Ollama - Fetching models response:', response.status);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch models: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    
-    if (!data.models || !Array.isArray(data.models)) {
-      throw new Error('Invalid data format: "models" array is missing.');
-    }
-
-    const models = data.models.map((model: any) => {
-      const supportsImages = model.details?.families?.some((family: string) => 
-        ['clip', 'llava'].includes(family.toLowerCase())
-      );
-      console.log(`Ollama - Model ${model.name} details:`, {
-        families: model.details?.families,
-        supportsImages
-      });
-      return {
-        name: model.name,
-        supportsImages
-      };
-    });
-
-    return models;
-  } catch (error) {
-    console.error('Error fetching Ollama models:', error);
-    return [];
+  async getModels(): Promise<Array<{ name: string; supportsImages: boolean; supportsAttachments: boolean }>> {
+    await this.modelsInitialized;
+    return this.models;
   }
-}
-  
-async supportsImages(model: string): Promise<boolean> {
-  await this.modelsInitialized;
-  return this.models.some(m => m.name === model && m.supportsImages);
-}
+
+  supportsImages(model: string): boolean {
+    return this.models.some(m => m.name === model && m.supportsImages);
+  }
 
   /**
    * Generates a response using the specified Ollama model based on the given prompt.
@@ -111,7 +105,7 @@ async supportsImages(model: string): Promise<boolean> {
       });
       const response = await ollama.invoke(prompt);
       return response.content as string;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in OllamaProvider.generateResponse:', error);
       throw new Error(`Failed to generate response: ${error.message}`);
     }
@@ -212,8 +206,6 @@ async supportsImages(model: string): Promise<boolean> {
   }
 
   supportsAttachments(model: string): boolean {
-    // For Ollama, we'll return false since it only supports single images
-    // through the generateResponseWithImage method
-    return false;
+    return this.models.some(m => m.name === model && m.supportsImages);
   }
 }

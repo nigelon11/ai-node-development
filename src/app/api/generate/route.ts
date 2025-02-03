@@ -60,118 +60,97 @@ export async function GET() {
  */
 export async function POST(request: Request) {
   try {
+    console.log('POST request received in generate/route.ts');
     const formData = await request.formData();
+    
+    // Log form data entries for debugging
+    const entries = Array.from(formData.entries()).map(([key, value]) => ({
+      key,
+      type: typeof value,
+      fileType: value instanceof Blob ? value.type : 'N/A'
+    }));
+    console.log('Form data entries:', entries);
+
+    // Extract basic parameters
     const prompt = formData.get('prompt') as string;
     const providerName = formData.get('provider') as string;
     const modelName = formData.get('model') as string;
 
-    console.log('POST request received in generate/route.ts');
     console.log('Request details:', { prompt, providerName, modelName });
 
-    if (!prompt || !providerName || !modelName) {
+    // Process attachments
+    const attachments: Array<{ type: string; content: string; mediaType: string }> = [];
+
+    // Process each form entry
+    for (const [key, value] of formData.entries()) {
+      console.log('Processing form entry:', { key, isFile: value instanceof Blob });
+
+      if (value instanceof Blob) {
+        console.log('Processing attachment:', key);
+        const fileDetails = {
+          key,
+          type: value.type,
+          size: value.size,
+          name: 'name' in value ? (value as any).name : 'unknown'
+        };
+        console.log('File details:', fileDetails);
+
+        // Read the file content
+        const arrayBuffer = await value.arrayBuffer();
+        const base64Data = Buffer.from(arrayBuffer).toString('base64');
+        const dataUri = `data:${value.type};base64,${base64Data}`;
+        
+        console.log('Image processed successfully:', {
+          key,
+          dataLength: dataUri.length
+        });
+
+        attachments.push({
+          type: 'image',
+          content: base64Data,
+          mediaType: value.type
+        });
+
+        console.log('Added image attachment');
+      }
+    }
+
+    console.log('Total attachments:', attachments.length);
+    console.log('Processed attachments:', attachments.map(att => ({
+      type: att.type,
+      contentLength: att.content.length,
+      mediaType: att.mediaType
+    })));
+
+    // Get the provider
+    const provider = await LLMFactory.getProvider(providerName);
+    console.log('Provider created:', providerName);
+
+    if (!provider) {
       return NextResponse.json(
-        { error: 'Missing required fields: prompt, provider, and model' },
+        { error: `Unsupported provider: ${providerName}` },
         { status: 400 }
       );
     }
 
     let response: string;
-    const provider = await LLMFactory.getProvider(providerName);
-    console.log('Provider created:', providerName);
-
-    // Process attachments
-    const attachments: any[] = [];
-    console.log('Form data entries:', Array.from(formData.entries()).map(([key, value]) => ({
-      key,
-      type: value instanceof File ? 'File' : typeof value,
-      fileType: value instanceof File ? value.type : 'N/A'
-    })));
-
-    for (const [key, value] of formData.entries()) {
-      console.log('Processing form entry:', { key, isFile: value instanceof File });
-      
-      if (value instanceof File) {
-        console.log('Processing attachment:', key);
-        const file = value;
-        const fileType = file.type;
-        console.log('File details:', {
-          key,
-          type: fileType,
-          size: file.size,
-          name: file.name
-        });
-        
-        if (fileType.startsWith('image/')) {
-          const base64Data = await fileToBase64(file);
-          console.log('Image processed successfully:', {
-            key,
-            dataLength: base64Data.length
-          });
-          
-          attachments.push({
-            type: 'image',
-            content: base64Data.replace(/^data:image\/[^;]+;base64,/, ''),
-            mediaType: fileType
-          });
-          console.log('Added image attachment');
-        } else {
-          attachments.push({
-            type: 'text',
-            content: await file.text(),
-            mediaType: 'text/plain'
-          });
-          console.log('Added text attachment');
-        }
-      }
-    }
-    console.log('Total attachments:', attachments.length);
-
-    console.log('Processed attachments:', attachments.map(a => ({
-      type: a.type,
-      contentLength: a.content.length,
-      mediaType: a.mediaType
-    })));
-
-    if (attachments.length > 0) {
-      try {
-        const supportsImages = await provider.supportsImages(modelName);
-        const supportsAttachments = await provider.supportsAttachments(modelName);
-        
-        if (supportsAttachments) {
-          response = await provider.generateResponseWithAttachments(prompt, modelName, attachments);
-        } else if (supportsImages && attachments.length === 1 && attachments[0].type === 'image') {
-          response = await provider.generateResponseWithImage(
-            prompt,
-            modelName,
-            attachments[0].content,
-            attachments[0].mediaType
-          );
-        } else {
-          return NextResponse.json(
-            { error: `Model ${modelName} does not support the provided attachments configuration` },
-            { status: 400 }
-          );
-        }
-      } catch (error) {
-        // Return specific error messages for known error types
-        return NextResponse.json(
-          { error: error.message },
-          { status: 400 }
-        );
-      }
+    if (attachments.length > 0 && provider.supportsAttachments) {
+      response = await provider.generateResponseWithAttachments(
+        prompt,
+        modelName,
+        attachments
+      );
     } else {
       response = await provider.generateResponse(prompt, modelName);
     }
 
     return NextResponse.json({ result: response });
-  } catch (error) {
+
+  } catch (error: any) {
     console.error('Error in POST /api/generate:', error);
-    
-    // Return specific error message if available, fallback to generic message
-    const errorMessage = error.message || 'An error occurred while generating the response.';
     return NextResponse.json(
-      { error: errorMessage },
-      { status: error.status || 500 }
+      { error: error.message || 'An error occurred while processing the request.' },
+      { status: 500 }
     );
   }
 }

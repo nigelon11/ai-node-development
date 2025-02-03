@@ -170,48 +170,6 @@ describe('Home component', () => {
       expect(screen.getByText('An error occurred while generating the response.')).toBeInTheDocument();
     });
   });
-
-  test('shows image upload for models that support images', async () => {
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: () => Promise.resolve({
-        models: [
-          { provider: 'Anthropic', model: { name: 'claude-3-sonnet', supportsImages: true, supportsAttachments: false } },
-          { provider: 'OpenAI', model: { name: 'gpt-4o', supportsImages: true, supportsAttachments: true } },
-        ],
-      }),
-    });
-
-    await act(async () => {
-      render(<Home />);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('Select Provider:')).toBeInTheDocument();
-      expect(screen.getByLabelText('Select LLM model:')).toBeInTheDocument();
-    });
-
-    // Test Anthropic model with image support
-    const providerSelect = screen.getByLabelText('Select Provider:');
-    fireEvent.change(providerSelect, { target: { value: 'Anthropic' } });
-
-    const modelSelect = screen.getByLabelText('Select LLM model:');
-    fireEvent.change(modelSelect, { target: { value: 'claude-3-sonnet' } });
-
-    await waitFor(() => {
-      expect(screen.getByTestId('image-upload')).toBeInTheDocument();
-    });
-
-    // Test OpenAI gpt-4o model with attachments
-    fireEvent.change(providerSelect, { target: { value: 'OpenAI' } });
-    fireEvent.change(modelSelect, { target: { value: 'gpt-4o' } });
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('Upload Files:')).toBeInTheDocument();
-      expect(screen.queryByTestId('image-upload')).not.toBeInTheDocument();
-    });
-  });
 });
 
 

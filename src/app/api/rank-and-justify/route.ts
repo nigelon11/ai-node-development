@@ -16,18 +16,28 @@ interface ModelInput {
   count?: number;
 }
 
-interface InputData {
+interface RankAndJustifyInput {
   prompt: string;
-  image?: string;
-  iterations?: number;
+  outcomes?: string[];  // Optional array of outcome descriptions
   models: ModelInput[];
+  iterations?: number;
   attachments?: string[];
+}
+
+interface ScoreOutcome {
+  outcome: string;
+  score: number;
+}
+
+interface RankAndJustifyOutput {
+  scores: ScoreOutcome[];
+  justification: string;
 }
 
 interface LLMProvider {
   generateResponse: (prompt: string, model: string) => Promise<string>;
   generateResponseWithAttachments?: (prompt: string, model: string, attachments: any[]) => Promise<string>;
-  supportsAttachments?: boolean;
+  supportsAttachments: (model: string) => boolean;
 }
 
 function logInteraction(message: string) {
@@ -56,12 +66,12 @@ function logInteraction(message: string) {
 export async function POST(request: Request) {
   try {
     console.log('POST request received at /api/rank-and-justify');
-    const body: InputData = await request.json();
+    const body: RankAndJustifyInput = await request.json();
     console.log('Request body:', {
       prompt: body.prompt,
       models: body.models,
-      hasAttachments: body.attachments?.length > 0,
-      attachmentsCount: body.attachments?.length
+      hasAttachments: body.attachments?.length ?? 0 > 0,
+      attachmentsCount: body.attachments?.length ?? 0
     });
 
     // Input validation
@@ -177,7 +187,8 @@ export async function POST(request: Request) {
         }
 
         try {
-          const llmProvider = await LLMFactory.getProvider(modelInfo.provider) as LLMProvider;
+          // Cast to unknown first to avoid type mismatch
+          const llmProvider = await LLMFactory.getProvider(modelInfo.provider) as unknown as LLMProvider;
           if (!llmProvider) {
             return NextResponse.json(
               { error: `Unsupported provider: ${modelInfo.provider}` },
@@ -186,7 +197,7 @@ export async function POST(request: Request) {
           }
 
           // Construct the full prompt based on iteration
-          let iterationPrompt = `${prePromptConfig.prompt}\n\n${prompt}`;
+          let iterationPrompt = `${prePromptConfig.getPrompt(body.outcomes)}\n\n${prompt}`;
           
           if (i > 0 && previousIterationResponses.length > 0) {
             const previousResponsesText = previousIterationResponses.join('\n\n');
@@ -205,7 +216,7 @@ export async function POST(request: Request) {
 
           for (let c = 0; c < count; c++) {
             let responseText: string;
-            if (attachments.length > 0 && llmProvider.supportsAttachments) {
+            if (attachments.length > 0 && llmProvider.supportsAttachments(modelInfo.model)) {
               logInteraction(`Prompt to ${modelInfo.provider} - ${modelInfo.model} with attachments:\n${iterationPrompt}\n`);
               try {
                 responseText = await llmProvider.generateResponseWithAttachments!(
@@ -220,14 +231,11 @@ export async function POST(request: Request) {
                   stack: providerError.stack,
                   attachments: attachments.length > 0 ? 'Has attachments' : 'No attachments'
                 });
-                return new Response(
-                  JSON.stringify({
-                    error: providerError.message,
-                    provider: modelInfo.provider,
-                    model: modelInfo.model
-                  }),
-                  { status: 400, headers: { 'Content-Type': 'application/json' } }
-                );
+                return NextResponse.json({
+                  error: providerError.message,
+                  scores: [] as ScoreOutcome[],
+                  justification: ''
+                }, { status: 400 });
               }
             } else {
               logInteraction(`Prompt to ${modelInfo.provider} - ${modelInfo.model}:\n${iterationPrompt}\n`);
@@ -243,24 +251,22 @@ export async function POST(request: Request) {
                   stack: providerError.stack,
                   attachments: attachments.length > 0 ? 'Has attachments' : 'No attachments'
                 });
-                return new Response(
-                  JSON.stringify({
-                    error: providerError.message,
-                    provider: modelInfo.provider,
-                    model: modelInfo.model
-                  }),
-                  { status: 400, headers: { 'Content-Type': 'application/json' } }
-                );
+                return NextResponse.json({
+                  error: providerError.message,
+                  scores: [] as ScoreOutcome[],
+                  justification: ''
+                }, { status: 400 });
               }
             }
 
-            const { decisionVector, justification } = parseModelResponse(responseText);
+            const { decisionVector, justification, scores } = parseModelResponse(responseText, body.outcomes);
             
             if (!decisionVector) {
-              return NextResponse.json(
-                { error: `Failed to parse decision vector from model ${modelInfo.model}. Response: ${responseText}` },
-                { status: 400 }
-              );
+              return NextResponse.json({
+                error: `Failed to parse decision vector from model ${modelInfo.model}. Response: ${responseText}`,
+                scores: [] as ScoreOutcome[],
+                justification: ''
+              }, { status: 400 });
             }
 
             allOutputs.push(decisionVector);
@@ -313,9 +319,17 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      aggregatedScore: finalAggregatedScore,
+      scores: body.outcomes 
+        ? finalAggregatedScore.map((score, index) => ({
+            outcome: body.outcomes![index],
+            score: Math.floor(score)
+          }))
+        : finalAggregatedScore.map(score => ({
+            outcome: 'unnamed',
+            score: Math.floor(score)
+          })),
       justification: finalJustification
-    });
+    } as RankAndJustifyOutput);
 
   } catch (error: any) {
     console.error('Error in POST /api/rank-and-justify:', {
@@ -323,44 +337,159 @@ export async function POST(request: Request) {
       stack: error.stack,
       type: error.constructor.name
     });
-    return new Response(
-      JSON.stringify({
-        error: error.message || 'An error occurred while processing the request.'
-      }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
+    return NextResponse.json({
+      error: error.message || 'An error occurred while processing the request.',
+      scores: [] as ScoreOutcome[],
+      justification: ''
+    }, { status: 500 });
   }
 }
 
 // Helper function to parse the model response
-function parseModelResponse(responseText: string): {
+function parseModelResponse(responseText: string, outcomes?: string[]): {
   decisionVector: number[] | null;
   justification: string;
+  scores: ScoreOutcome[];
 } {
   try {
-    // Regular expressions to match "SCORE:" and "JUSTIFICATION:"
-    const scoreRegex = /SCORE:\s*([0-9,\s]+)/i;
-    const justificationRegex = /JUSTIFICATION:\s*(.*)/is;
+    console.log('parseModelResponse input:', {
+      responseText: responseText.substring(0, 200) + '...',  // Log first 200 chars
+      hasOutcomes: !!outcomes,
+      outcomesLength: outcomes?.length
+    });
 
-    const scoreMatch = responseText.match(scoreRegex);
-    const justificationMatch = responseText.match(justificationRegex);
+    // Try multiple strategies to extract JSON from the response
+    let response;
 
-    let decisionVector: number[] | null = null;
-    if (scoreMatch && scoreMatch[1]) {
-      decisionVector = scoreMatch[1]
-        .split(',')
-        .map((numStr) => parseInt(numStr.trim()))
-        .filter((num) => !isNaN(num));
+    // Strategy 0: Try direct JSON parsing first
+    try {
+      const trimmedResponse = responseText.trim();
+      if (trimmedResponse.startsWith('{') && trimmedResponse.endsWith('}')) {
+        const parsed = JSON.parse(trimmedResponse);
+        if (parsed && typeof parsed === 'object' && 'score' in parsed && 'justification' in parsed) {
+          response = parsed;
+          console.log('Successfully parsed direct JSON');
+        }
+      }
+    } catch (e) {
+      console.log('Direct JSON parsing failed');
     }
 
-    const justification = justificationMatch
-      ? justificationMatch[1].trim()
-      : 'No justification provided.';
+    // Strategy 1: Try to find JSON in code blocks
+    if (!response) {
+      const jsonBlockMatch = responseText.match(/```(?:json)?\s*({[\s\S]*?})\s*```/);
+      if (jsonBlockMatch) {
+        try {
+          response = JSON.parse(jsonBlockMatch[1].trim());
+          console.log('Successfully parsed JSON from markdown block');
+        } catch (e) {
+          console.log('Failed to parse JSON from markdown block');
+        }
+      }
+    }
 
-    return { decisionVector, justification };
+    // Strategy 2: Try to find any JSON-like structure in the text
+    if (!response) {
+      // Updated regex to better handle multiline JSON
+      const jsonMatch = responseText.match(/\{[\s\S]*?\}/g);
+      if (jsonMatch) {
+        for (const potentialJson of jsonMatch) {
+          try {
+            const parsed = JSON.parse(potentialJson);
+            if (parsed && typeof parsed === 'object' && 'score' in parsed && 'justification' in parsed) {
+              response = parsed;
+              console.log('Successfully parsed JSON from text');
+              break;
+            }
+          } catch (e) {
+            continue;
+          }
+        }
+      }
+    }
+
+    // Strategy 3: Try the old format with SCORE: and JUSTIFICATION:
+    if (!response) {
+      console.log('Trying old format parsing');
+      const scoreMatch = responseText.match(/SCORE:\s*([0-9,\s]+)/i);
+      const justificationMatch = responseText.match(/JUSTIFICATION:\s*([^]*?)(?:$|SCORE:)/i);
+      
+      console.log('Old format parsing results:', {
+        hasScoreMatch: !!scoreMatch,
+        scoreMatchGroups: scoreMatch?.length,
+        hasJustificationMatch: !!justificationMatch,
+        justificationMatchGroups: justificationMatch?.length
+      });
+      
+      if (scoreMatch) {
+        const scores = scoreMatch[1].split(',').map(s => parseInt(s.trim()));
+        const justification = justificationMatch ? justificationMatch[1].trim() : '';
+        
+        response = {
+          score: scores,
+          justification: justification
+        };
+        console.log('Successfully parsed old format');
+      }
+    }
+
+    // Validate the response structure
+    if (!response || typeof response !== 'object') {
+      throw new Error('Could not extract valid JSON response from model output');
+    }
+
+    if (!Array.isArray(response.score)) {
+      throw new Error('Score must be an array of numbers');
+    }
+
+    if (typeof response.justification !== 'string') {
+      throw new Error('Justification must be a string');
+    }
+
+    // Validate that all scores are integers
+    const decisionVector = response.score.map(Number);
+    console.log('Parsed decision vector:', decisionVector);
+
+    if (decisionVector.some(isNaN)) {
+      throw new Error('All scores must be valid numbers');
+    }
+
+    // If outcomes are provided, validate the length matches
+    if (outcomes && decisionVector.length !== outcomes.length) {
+      throw new Error(`Score array length (${decisionVector.length}) does not match outcomes length (${outcomes.length})`);
+    }
+
+    // Validate that scores sum to 1,000,000
+    const sum = decisionVector.reduce((a: number, b: number) => a + b, 0);
+    if (sum !== 1000000) {
+      throw new Error(`Scores must sum to 1,000,000 (got ${sum})`);
+    }
+
+    // Create the scores array with outcomes if provided, or "unnamed" if not
+    const scores = decisionVector.map((score: number, index: number) => ({
+      outcome: outcomes?.[index] || `outcome${index + 1}`,  // Use "outcome1", "outcome2" etc if no outcomes provided
+      score
+    }));
+
+    console.log('Final parsed result:', {
+      decisionVector,
+      justification: response.justification.substring(0, 100) + '...',
+      scores
+    });
+
+    return {
+      decisionVector,
+      justification: response.justification,
+      scores  // Always return scores in the correct format
+    };
   } catch (err) {
     console.error('Error parsing model response:', err);
-    return { decisionVector: null, justification: '' };
+    console.error('Raw response:', responseText);
+    return { 
+      decisionVector: null, 
+      justification: '', 
+      scores: []  // Return empty array instead of undefined
+    };
   }
 }
 

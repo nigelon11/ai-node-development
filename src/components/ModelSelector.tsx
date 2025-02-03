@@ -1,7 +1,7 @@
 import React from 'react';
 
 interface ModelSelectorProps {
-  models: Array<{ name: string; supportsImages: boolean }>;
+  models: Array<{ name: string; supportsImages: boolean; supportsAttachments: boolean }>;
   selectedModel: string;
   onModelChange: (model: string) => void;
   className?: string;
@@ -17,7 +17,10 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({ models, selectedMo
     >
       {models.map((model) => (
         <option key={model.name} value={model.name}>
-          {model.name} {model.supportsImages ? '(Supports Images)' : ''}
+          {model.name}
+          {model.supportsImages && model.supportsAttachments ? ' (Supports Attachments)' : 
+           model.supportsImages ? ' (Images Only)' : 
+           model.supportsAttachments ? ' (Attachments)' : ''}
         </option>
       ))}
     </select>

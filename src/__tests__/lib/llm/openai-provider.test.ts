@@ -129,6 +129,7 @@ describe('OpenAIProvider', () => {
     expect(ChatOpenAI).toHaveBeenCalledWith({
       openAIApiKey: 'test-api-key',
       modelName: 'gpt-4o',
+      maxTokens: 1000
     });
     expect(mockInvoke).toHaveBeenCalledWith([
       new HumanMessage({
@@ -137,7 +138,10 @@ describe('OpenAIProvider', () => {
           { type: "text", text: 'Additional text' },
           {
             type: "image_url",
-            image_url: { url: 'data:image/jpeg;base64,base64EncodedImageString' }
+            image_url: { 
+              url: 'data:image/jpeg;base64,base64EncodedImageString',
+              detail: "auto"
+            }
           }
         ]
       })
@@ -262,6 +266,7 @@ describe('OpenAIProvider', () => {
     expect(ChatOpenAI).toHaveBeenCalledWith({
       openAIApiKey: 'test-api-key',
       modelName: 'gpt-4o',
+      maxTokens: 1000
     });
     expect(mockInvoke).toHaveBeenCalledWith([
       new HumanMessage({
@@ -270,19 +275,31 @@ describe('OpenAIProvider', () => {
           { type: "text", text: 'Additional text' },
           {
             type: "image_url",
-            image_url: { url: 'data:image/jpeg;base64,base64EncodedImageString' }
+            image_url: { 
+              url: 'data:image/jpeg;base64,base64EncodedImageString',
+              detail: "auto"
+            }
           },
           {
             type: "image_url",
-            image_url: { url: 'data:image/png;base64,base64EncodedImageString' }
+            image_url: { 
+              url: 'data:image/png;base64,base64EncodedImageString',
+              detail: "auto"
+            }
           },
           {
             type: "image_url",
-            image_url: { url: 'data:image/gif;base64,base64EncodedImageString' }
+            image_url: { 
+              url: 'data:image/gif;base64,base64EncodedImageString',
+              detail: "auto"
+            }
           },
           {
             type: "image_url",
-            image_url: { url: 'data:image/webp;base64,base64EncodedImageString' }
+            image_url: { 
+              url: 'data:image/webp;base64,base64EncodedImageString',
+              detail: "auto"
+            }
           }
         ]
       })

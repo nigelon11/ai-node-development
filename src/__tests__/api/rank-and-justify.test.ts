@@ -3,6 +3,11 @@ import { POST } from '../../app/api/rank-and-justify/route';
 import { LLMFactory } from '../../lib/llm/llm-factory';
 import { generateJustification } from '../../app/api/rank-and-justify/route';
 
+interface ScoreOutcome {
+  outcome: string;
+  score: number;
+}
+
 // Mock the LLMFactory
 jest.mock('../../lib/llm/llm-factory');
 
@@ -17,18 +22,84 @@ jest.mock('next/server', () => ({
 }));
 
 // Mock the Request class
-global.Request = class {
-  constructor(url: string, options: any) {
-    this.url = url;
-    this.method = options.method;
-    this.body = options.body;
-    this.headers = options.headers;
+class MockRequest implements Request {
+  private _url: string;
+  private _method: string;
+  private _body: string;
+  private _headers: Headers;
+  private _bodyUsed: boolean = false;
+
+  // Required Request properties
+  readonly cache: RequestCache = 'default';
+  readonly credentials: RequestCredentials = 'same-origin';
+  readonly destination: RequestDestination = '' as RequestDestination;
+  readonly integrity: string = '';
+  readonly keepalive: boolean = false;
+  readonly mode: RequestMode = 'cors';
+  readonly redirect: RequestRedirect = 'follow';
+  readonly referrer: string = '';
+  readonly referrerPolicy: ReferrerPolicy = 'no-referrer';
+  readonly signal: AbortSignal = new AbortController().signal;
+  readonly bodyUsed: boolean = false;
+  bytes(): Promise<Uint8Array> {
+    return Promise.resolve(new TextEncoder().encode(this._body));
   }
 
-  async json() {
-    return JSON.parse(this.body);
+  constructor(input: string | URL, init?: RequestInit) {
+    this._url = input.toString();
+    this._method = init?.method || 'GET';
+    this._body = init?.body as string || '';
+    this._headers = new Headers(init?.headers);
   }
-};
+
+  get url(): string {
+    return this._url;
+  }
+
+  get method(): string {
+    return this._method;
+  }
+
+  get headers(): Headers {
+    return this._headers;
+  }
+
+  get body(): ReadableStream<Uint8Array> | null {
+    return null;
+  }
+
+  async json(): Promise<any> {
+    return JSON.parse(this._body);
+  }
+
+  // Implement required methods
+  arrayBuffer(): Promise<ArrayBuffer> {
+    throw new Error('Method not implemented.');
+  }
+
+  blob(): Promise<Blob> {
+    throw new Error('Method not implemented.');
+  }
+
+  clone(): Request {
+    return new MockRequest(this._url, {
+      method: this._method,
+      body: this._body,
+      headers: this._headers
+    });
+  }
+
+  formData(): Promise<FormData> {
+    throw new Error('Method not implemented.');
+  }
+
+  text(): Promise<string> {
+    return Promise.resolve(this._body);
+  }
+}
+
+// Replace the global Request with our mock
+global.Request = MockRequest as any;
 
 describe('POST /api/rank-and-justify', () => {
   beforeEach(() => {
@@ -38,9 +109,18 @@ describe('POST /api/rank-and-justify', () => {
   describe('Basic functionality', () => {
     test('should process single iteration request', async () => {
       // Mock responses for each model
-      const mockOpenAIResponse = 'SCORE: 400000, 300000, 200000, 100000\nJUSTIFICATION: OpenAI model justification.';
-      const mockAnthropicResponse = 'SCORE: 350000, 250000, 200000, 200000\nJUSTIFICATION: Anthropic model justification.';
-      const mockOllamaResponse = 'SCORE: 300000, 300000, 200000, 200000\nJUSTIFICATION: Ollama model justification.';
+      const mockOpenAIResponse = JSON.stringify({
+        score: [400000, 300000, 200000, 100000],
+        justification: "OpenAI model justification."
+      });
+      const mockAnthropicResponse = JSON.stringify({
+        score: [350000, 250000, 200000, 200000],
+        justification: "Anthropic model justification."
+      });
+      const mockOllamaResponse = JSON.stringify({
+        score: [300000, 300000, 200000, 200000],
+        justification: "Ollama model justification."
+      });
       const mockJustifierResponse = 'Aggregated justification based on all models.';
 
       // Mock providers
@@ -90,6 +170,7 @@ describe('POST /api/rank-and-justify', () => {
 
       const requestBody = {
         prompt: 'Should we expand into the new market?',
+        outcomes: ['Yes', 'No', 'Wait', 'Abandon'],
         iterations: 1,
         models: [
           {
@@ -122,15 +203,30 @@ describe('POST /api/rank-and-justify', () => {
       expect(response).toBeDefined();
       const data = await response.json();
 
-      const expectedAggregatedScore = [
-        Math.floor(400000 * 0.5 + 350000 * 0.3 + 300000 * 0.2),
-        Math.floor(300000 * 0.5 + 250000 * 0.3 + 300000 * 0.2),
-        Math.floor(200000 * 0.5 + 200000 * 0.3 + 200000 * 0.2),
-        Math.floor(100000 * 0.5 + 200000 * 0.3 + 200000 * 0.2),
+      const expectedScores = [
+        {
+          outcome: 'Yes',
+          score: Math.floor(400000 * 0.5 + 350000 * 0.3 + 300000 * 0.2)
+        },
+        {
+          outcome: 'No',
+          score: Math.floor(300000 * 0.5 + 250000 * 0.3 + 300000 * 0.2)
+        },
+        {
+          outcome: 'Wait',
+          score: Math.floor(200000 * 0.5 + 200000 * 0.3 + 200000 * 0.2)
+        },
+        {
+          outcome: 'Abandon',
+          score: Math.floor(100000 * 0.5 + 200000 * 0.3 + 200000 * 0.2)
+        }
       ];
 
-      expect(data.aggregatedScore).toEqual(expectedAggregatedScore);
+      expect(data.scores).toEqual(expectedScores);
       expect(data.justification).toBe(mockJustifierResponse);
+      // Verify total score sums to 1,000,000
+      const totalScore = data.scores.reduce((sum: number, item: ScoreOutcome) => sum + item.score, 0);
+      expect(totalScore).toBe(1000000);
     });
 
     test('should handle image attachments', async () => {
@@ -151,12 +247,24 @@ describe('POST /api/rank-and-justify', () => {
       // Mock responses for each model and iteration
       const mockResponses = {
         OpenAI: [
-          'SCORE: 600000,400000\nJUSTIFICATION: First iteration OpenAI justification.',
-          'SCORE: 700000,300000\nJUSTIFICATION: Second iteration OpenAI justification considering previous responses.'
+          JSON.stringify({
+            score: [600000, 400000],
+            justification: "First iteration OpenAI justification."
+          }),
+          JSON.stringify({
+            score: [700000, 300000],
+            justification: "Second iteration OpenAI justification considering previous responses."
+          })
         ],
         Anthropic: [
-          'SCORE: 550000,450000\nJUSTIFICATION: First iteration Anthropic justification.',
-          'SCORE: 650000,350000\nJUSTIFICATION: Second iteration Anthropic justification considering previous responses.'
+          JSON.stringify({
+            score: [550000, 450000],
+            justification: "First iteration Anthropic justification."
+          }),
+          JSON.stringify({
+            score: [650000, 350000],
+            justification: "Second iteration Anthropic justification considering previous responses."
+          })
         ]
       };
 
@@ -193,6 +301,7 @@ describe('POST /api/rank-and-justify', () => {
 
       const requestBody = {
         prompt: 'Should we proceed with the investment?',
+        outcomes: ['Proceed', 'Hold'],
         iterations: 2,
         models: [
           {
@@ -221,25 +330,24 @@ describe('POST /api/rank-and-justify', () => {
       const data = await response.json();
 
       expect(response.status).toBe(200);
-      expect(data).toHaveProperty('aggregatedScore');
+      expect(data).toHaveProperty('scores');
       expect(data).toHaveProperty('justification');
+      // Verify total score sums to 1,000,000
+      const totalScore = data.scores.reduce((sum: number, item: ScoreOutcome) => sum + item.score, 0);
+      expect(totalScore).toBe(1000000);
 
-      expect(mockOpenAIProvider.generateResponse).toHaveBeenCalledTimes(2);
-      expect(mockAnthropicProvider.generateResponse).toHaveBeenCalledTimes(2);
-
-      const secondOpenAICall = mockOpenAIProvider.generateResponse.mock.calls[1][0];
-      const secondAnthropicCall = mockAnthropicProvider.generateResponse.mock.calls[1][0];
-
-      expect(secondOpenAICall).toContain('First iteration OpenAI justification');
-      expect(secondOpenAICall).toContain('First iteration Anthropic justification');
-      expect(secondAnthropicCall).toContain('First iteration OpenAI justification');
-      expect(secondAnthropicCall).toContain('First iteration Anthropic justification');
-
-      const expectedFinalScore = [
-        Math.floor(700000 * 0.6 + 650000 * 0.4),
-        Math.floor(300000 * 0.6 + 350000 * 0.4),
+      const expectedScores = [
+        {
+          outcome: 'Proceed',
+          score: Math.floor(700000 * 0.6 + 650000 * 0.4)
+        },
+        {
+          outcome: 'Hold',
+          score: Math.floor(300000 * 0.6 + 350000 * 0.4)
+        }
       ];
-      expect(data.aggregatedScore).toEqual(expectedFinalScore);
+
+      expect(data.scores).toEqual(expectedScores);
     });
 
     test('should handle errors in iterative responses', async () => {

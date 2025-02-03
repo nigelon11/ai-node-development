@@ -7,14 +7,27 @@ import { ModelSelector } from '../components/ModelSelector';
 import { TabSelector } from '../components/TabSelector';
 import { RankAndJustifyForm } from '../components/RankAndJustifyForm';
 
-interface ProviderModels {
+interface ModelInfo {
   provider: string;
-  models: Array<{ name: string; supportsImages: boolean; supportsAttachments: boolean }>;
+  model: string | { name: string; [key: string]: any };
+  supportedInputs?: string[];
 }
 
 interface RankAndJustifyResult {
-  aggregatedScore: number[];
+  scores: Array<{
+    outcome: string;
+    score: number;
+  }>;
   justification: string;
+  metadata?: {
+    totalScore: number;
+    iterationCount: number;
+  };
+}
+
+interface ProviderModels {
+  provider: string;
+  models: Array<{ name: string; supportsImages: boolean; supportsAttachments: boolean }>;
 }
 
 export default function Home() {
@@ -37,17 +50,29 @@ export default function Home() {
       .then(data => {
         console.log('API response:', data);
         if (data && data.models && Array.isArray(data.models)) {
-          const groupedModels = data.models.reduce((acc, { provider, model }) => {
+          const groupedModels = (data.models as ModelInfo[]).reduce((acc: { [key: string]: string[] }, { provider, model }) => {
             if (!acc[provider]) {
               acc[provider] = [];
             }
-            acc[provider].push(model);
+            // Store only the model name string
+            acc[provider].push(typeof model === 'string' ? model : model.name || String(model));
             return acc;
           }, {});
 
-          const providerData = Object.entries(groupedModels).map(([provider, models]) => ({
+          const providerData: ProviderModels[] = Object.entries(groupedModels).map(([provider, modelNames]) => ({
             provider,
-            models,
+            models: modelNames.map(modelName => {
+              const modelInfo = data.models.find((m: ModelInfo) => 
+                m.provider === provider && 
+                (typeof m.model === 'string' ? m.model === modelName : m.model.name === modelName)
+              );
+              const hasImageSupport = modelInfo?.supportedInputs?.includes('image') || false;
+              return {
+                name: modelName,
+                supportsImages: hasImageSupport,
+                supportsAttachments: hasImageSupport  // If it supports images, it supports attachments
+              };
+            })
           }));
 
           console.log('Provider data:', providerData);
@@ -90,13 +115,9 @@ export default function Home() {
     const selectedProviderModels = providerModels.find(pm => pm.provider === selectedProvider);
     const modelInfo = selectedProviderModels?.models.find(m => m.name === model);
 
-    if (modelInfo && !modelInfo.supportsAttachments && attachments.length > 0) {
-      alert('This model does not support attachments. Please remove attachments or select a different model.');
-      return;
-    }
-
+    // Always clear previous results when changing models, but do not clear image/attachments.
+    setResult('');
     setSelectedModel(model);
-    resetForm();
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -122,9 +143,16 @@ export default function Home() {
         });
       }
 
-      if (uploadedImage && !providerModels.find(pm => pm.provider === selectedProvider)
-          ?.models.find(m => m.name === selectedModel)?.supportsAttachments) {
-        formData.append('image', uploadedImage);
+      const currentModelSupportsAttachments = providerModels.find(pm => pm.provider === selectedProvider)
+          ?.models.find(m => m.name === selectedModel)?.supportsAttachments;
+      if (uploadedImage) {
+        if (currentModelSupportsAttachments) {
+          // Append the image as an attachment for models that support attachments.
+          formData.append('file0', uploadedImage);
+        } else {
+          // Append as the legacy 'image' field for models that do not support attachments.
+          formData.append('image', uploadedImage);
+        }
       }
 
       const response = await fetch('/api/generate', {
@@ -193,11 +221,18 @@ export default function Home() {
     return attachments.length === 0 || m.supportsAttachments;
   }) || [];
 
+  const handleTabChange = (tab: string) => {
+    // Clear results when switching tabs
+    setResult('');
+    setRankResult(null);
+    setActiveTab(tab);
+  };
+
   return (
     <main className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-8">AI Model Interface</h1>
       
-      <TabSelector activeTab={activeTab} onTabChange={setActiveTab} />
+      <TabSelector activeTab={activeTab} onTabChange={handleTabChange} />
 
       {activeTab === 'generate' ? (
         <form onSubmit={handleSubmit} className="space-y-6" aria-label="Generate AI Response">
@@ -305,9 +340,20 @@ export default function Home() {
               <h3 className="text-xl font-bold mb-4">Analysis Results:</h3>
               <div className="mb-4">
                 <h4 className="font-semibold mb-2">Scores:</h4>
-                <pre className="p-4 bg-white dark:bg-gray-800 rounded">
-                  {JSON.stringify(rankResult.aggregatedScore, null, 2)}
-                </pre>
+                <div className="p-4 bg-white dark:bg-gray-800 rounded">
+                  {rankResult.scores.map((item, index) => (
+                    <div key={index} className="mb-2">
+                      <span className="font-medium">{item.outcome}: </span>
+                      <span>{item.score.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+                {rankResult.metadata && (
+                  <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                    <div>Total Score: {rankResult.metadata.totalScore.toLocaleString()}</div>
+                    <div>Iterations: {rankResult.metadata.iterationCount}</div>
+                  </div>
+                )}
               </div>
               <div>
                 <h4 className="font-semibold mb-2">Justification:</h4>

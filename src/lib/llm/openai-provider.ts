@@ -123,6 +123,7 @@ export class OpenAIProvider implements LLMProvider {
     const openai = new ChatOpenAI({
       openAIApiKey: this.apiKey,
       modelName: model,
+      maxTokens: 1000,
     });
 
     // Validate image attachments
@@ -147,7 +148,10 @@ export class OpenAIProvider implements LLMProvider {
         if (attachment.type === "image") {
           return {
             type: "image_url",
-            image_url: { url: `data:${attachment.mediaType};base64,${attachment.content}` }
+            image_url: {
+              url: `data:${attachment.mediaType};base64,${attachment.content}`,
+              detail: "auto"  // Let OpenAI decide the appropriate detail level
+            }
           };
         } else {
           return { type: "text", text: attachment.content };
