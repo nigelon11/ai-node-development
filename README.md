@@ -1,6 +1,20 @@
-# AI-Enabled Web App Template
+# AI-Enabled Web App with Multi-Model Deliberation
 
-This is a [Next.js](https://nextjs.org/) project that serves as a template for AI-enabled web applications. It demonstrates integration with various Language Model (LLM) providers, including open-source models, OpenAI, and Anthropic's Claude.
+This is a [Next.js](https://nextjs.org/) project that serves as a platform for AI-enabled web applications with advanced deliberation capabilities. It demonstrates integration with various Language Model (LLM) providers, including open-source models, OpenAI, and Anthropic's Claude.
+
+## Application Overview
+
+This application extends beyond traditional AI chatbots by introducing a unique multi-model deliberation system. Key features include:
+
+- **Multi-LLM Integration**: Connect with multiple AI providers simultaneously (OpenAI, Anthropic Claude, and local Ollama models)
+- **Collective Decision Making**: Employ multiple AI models to deliberate on questions or statements
+- **Weighted Voting System**: Assign different weights to various models based on their reliability or expertise
+- **Outcome Ranking**: Vote on and rank possible outcomes for a given prompt
+- **Detailed Justifications**: Generate comprehensive explanations for collective decisions
+- **Support for Attachments**: Process both text and image inputs for richer context
+- **Interaction Logging**: Track and analyze all LLM interactions
+
+The application's standout feature is its ability to aggregate insights from multiple AI models, creating a more balanced and nuanced response than any single model could provide alone.
 
 ## Getting Started
 
@@ -30,14 +44,21 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 - `src/app/`: Contains the main application pages and API routes
   - `page.tsx`: The main page component with the UI for interacting with LLMs
   - `api/generate/`: API route for fetching available models and generating responses
+  - `api/rank-and-justify/`: API route for multi-model deliberation and outcome ranking
 - `src/lib/llm/`: Contains the LLM provider implementations
   - `llm-provider-interface.ts`: Defines the interface for LLM providers
   - `llm-factory.ts`: Factory class for creating LLM provider instances
   - `openai-provider.ts`: OpenAI provider implementation
   - `claude-provider.ts`: Anthropic's Claude provider implementation
   - `ollama-provider.ts`: Ollama (open-source) provider implementation
+- `src/config/`: Configuration files
+  - `models.ts`: Model configuration for different providers
+  - `prePromptConfig.ts`: Configuration for prompts sent before user input
+  - `postPromptConfig.ts`: Configuration for prompts sent after initial responses
 
 ## How It Works
+
+### Basic LLM Interaction
 
 1. The main page (`src/app/page.tsx`) allows users to:
    - Select an LLM provider
@@ -52,7 +73,22 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
    - The server-side code uses the appropriate LLM provider to generate a response
    - The generated response is sent back to the client and displayed on the page
 
-4. The LLM providers are implemented as separate classes, each conforming to the `LLMProvider` interface. This allows for easy addition of new providers in the future.
+### Multi-Model Deliberation
+
+The application's advanced feature is the rank-and-justify system:
+
+1. Multiple models from different providers can be assigned to deliberate on a prompt
+2. Each model:
+   - Receives the same input (with optional attachments)
+   - Assigns scores to possible outcomes
+   - Provides detailed justification for its decision
+3. The system:
+   - Weights each model's vote based on assigned importance
+   - Aggregates scores across all participating models
+   - Generates a final justification based on all individual justifications
+   - Returns the ranked outcomes with the collective justification
+
+This deliberation process creates a more balanced perspective by combining insights from multiple AI sources, reducing the bias or limitations of any single model.
 
 ## Customization
 
@@ -75,7 +111,6 @@ This project can be easily deployed on platforms like Vercel. Make sure to set u
 
 For more details on deployment, refer to the [Next.js deployment documentation](https://nextjs.org/docs/deployment).
 
-
 ## Downloading Ollama Models Locally
 
 To use Ollama models locally:
@@ -91,6 +126,7 @@ To use Ollama models locally:
 3. Repeat for any other models you want to use locally.
 
 4. Ensure the Ollama service is running before starting your Next.js application.
+
 ## Updating Available Models
 
 To change which models can be selected by the user:
@@ -123,7 +159,6 @@ ollama pull model-name
 
 A complete list of the models available can be found at the Ollama Library (https://ollama.com/library)
 
-
 3. If you want to add or remove entire providers, update the `PROVIDERS` array in `src/app/api/generate/route.ts`:
 
    ```typescript
@@ -133,4 +168,14 @@ A complete list of the models available can be found at the Ollama Library (http
    Then, update the `LLMFactory` in `src/lib/llm/llm-factory.ts` to handle the new provider.
 
 Remember to restart your development server after making these changes for them to take effect.
+
+## Additional Environment Variables
+
+For the rank-and-justify feature, you may configure an additional environment variable:
+
+```
+JUSTIFIER_MODEL=provider:model-name
+```
+
+This defines which model will be used to generate the final justification for multi-model deliberations.
 
