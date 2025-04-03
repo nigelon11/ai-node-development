@@ -97,6 +97,47 @@ You can customize this template by:
 - Modifying the UI in `src/app/page.tsx`
 - Extending the API functionality in `src/app/api/generate/route.ts`
 
+## Testing
+
+This project uses [Jest](https://jestjs.io/) as its testing framework, along with [React Testing Library](https://testing-library.com/docs/react-testing-library/intro/) for component testing. Tests are located primarily within the `src/__tests__` directory.
+
+### Running Tests
+
+To run all tests:
+
+```bash
+npm test
+```
+
+To run tests in watch mode:
+
+```bash
+npm run test:watch
+```
+
+To run a specific test file:
+
+```bash
+npm test -- path/to/your/test/file.test.ts
+```
+
+### Writing Effective Tests
+
+1.  **Naming:** Use descriptive test names (`describe`, `it`, `test`) that clearly explain the expected behavior.
+2.  **Isolation:** Mock external dependencies (like APIs, `fetch`, or libraries) to isolate the component or module under test. This ensures tests are reliable and focus on the unit's logic.
+3.  **Coverage:** Test both successful execution paths and expected error scenarios (e.g., invalid input, API failures).
+4.  **Setup/Teardown:** Use `beforeEach` for common setup and `afterEach` for cleanup if needed to keep tests independent.
+5.  **Component Testing:** Use React Testing Library's queries that resemble how users interact with the application (e.g., `getByText`, `getByRole`, `getByLabelText`) rather than testing implementation details.
+
+### Test Structure Guidelines
+
+1.  **Location:** Place test files in appropriate subdirectories within `src/__tests__` (e.g., `src/__tests__/api`, `src/__tests__/components`, `src/__tests__/lib`).
+2.  **Naming Convention:** Use the naming convention `[component-name].test.tsx` or `[module-name].test.ts`.
+3.  **Imports:** Import necessary testing utilities and the specific component/module to be tested.
+4.  **Grouping:** Use `describe` blocks to group related test cases for a specific function or component feature.
+
+Remember to keep tests up-to-date as functionality evolves. Well-maintained tests serve as living documentation and help prevent regressions.
+
 ## Learn More
 
 To learn more about the technologies used in this project, check out the following resources:
