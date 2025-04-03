@@ -260,21 +260,30 @@ export async function POST(request: Request) {
               }
             }
 
-            const { decisionVector, justification, scores } = parseModelResponse(responseText, body.outcomes);
+            let { decisionVector, justification, scores } = parseModelResponse(responseText, body.outcomes);
+            let effectiveJustification = justification; // Store potentially modified justification
             
             if (!decisionVector) {
-              return NextResponse.json({
-                error: `Failed to parse decision vector from model ${modelInfo.model}. Response: ${responseText}`,
-                scores: [] as ScoreOutcome[],
-                justification: ''
-              }, { status: 400 });
+              console.warn(`Failed to parse decision vector from model ${modelInfo.model}. Response: ${responseText}. Applying fallback.`);
+              const numOutcomes = body.outcomes?.length || 2; // Default to 2 if outcomes not specified
+              const baseScore = Math.floor(1000000 / numOutcomes);
+              const fallbackDecisionVector = Array(numOutcomes).fill(baseScore);
+              // Distribute remainder to ensure sum is exactly 1,000,000
+              fallbackDecisionVector[0] += 1000000 - (baseScore * numOutcomes);
+              
+              decisionVector = fallbackDecisionVector; // Use fallback vector
+
+              if (!justification) {
+                effectiveJustification = `LLM_ERROR: ${responseText}`; // Create fallback justification
+              }
+              // No need to return an error, proceed with fallback values
             }
 
             allOutputs.push(decisionVector);
             
-            if (justification) {
-              const formattedResponse = `From ${modelInfo.provider} - ${modelInfo.model}:\nScore: ${decisionVector}\nJustification: ${justification}`;
-              iterationJustifications.push(`From model ${modelInfo.model}:\n${justification}`);
+            if (effectiveJustification) { // Use the potentially modified justification
+              const formattedResponse = `From ${modelInfo.provider} - ${modelInfo.model}:\nScore: ${decisionVector}\nJustification: ${effectiveJustification}`;
+              iterationJustifications.push(`From model ${modelInfo.model}:\n${effectiveJustification}`);
               
               if (i < iterations - 1) {
                 previousIterationResponses.push(formattedResponse);

@@ -385,6 +385,151 @@ describe('POST /api/rank-and-justify', () => {
     });
   });
 
+  describe('Error Handling and Fallback', () => {
+    test('should handle malformed response from one model and apply fallback', async () => {
+      // Mock responses for each model
+      const mockOpenAIResponse = JSON.stringify({
+        score: [700000, 300000],
+        justification: "OpenAI model justification."
+      });
+      // Malformed response (plain text)
+      const mockAnthropicMalformedResponse = "I am unable to provide a score in the requested format.";
+      const mockJustifierResponse = 'Aggregated justification considering fallback.';
+
+      // Mock providers
+      const mockOpenAIProvider = {
+        generateResponse: jest.fn().mockResolvedValue(mockOpenAIResponse),
+        supportsAttachments: jest.fn().mockResolvedValue(false),
+      };
+
+      const mockAnthropicProvider = {
+        generateResponse: jest.fn().mockResolvedValue(mockAnthropicMalformedResponse),
+        supportsAttachments: jest.fn().mockResolvedValue(false),
+      };
+
+      const mockJustifierProvider = {
+        generateResponse: jest.fn().mockResolvedValue(mockJustifierResponse),
+      };
+
+      // Mock LLMFactory.getProvider
+      (LLMFactory.getProvider as jest.Mock).mockImplementation((providerName: string) => {
+        switch (providerName) {
+          case 'OpenAI':
+            return mockOpenAIProvider;
+          case 'Anthropic':
+            return mockAnthropicProvider;
+          case 'JustifierProvider': // Assuming 'JustifierProvider' is the name used for the final justification LLM
+            return mockJustifierProvider;
+          default:
+            throw new Error(`Unknown provider: ${providerName}`);
+        }
+      });
+
+      const requestBody = {
+        prompt: 'Binary decision?',
+        outcomes: ['Yes', 'No'], // 2 outcomes
+        iterations: 1,
+        models: [
+          {
+            provider: 'OpenAI',
+            model: 'gpt-4',
+            weight: 0.6, // Weight 60%
+          },
+          {
+            provider: 'Anthropic',
+            model: 'claude-3',
+            weight: 0.4, // Weight 40%
+          },
+        ],
+      };
+
+      const request = new Request('http://localhost/api/rank-and-justify', {
+        method: 'POST',
+        body: JSON.stringify(requestBody),
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      const response = await POST(request);
+      expect(response).toBeDefined();
+      const data = await response.json();
+
+      // Expect success despite one model failing format
+      expect(response.status).toBe(200);
+      expect(data).toHaveProperty('scores');
+      expect(data).toHaveProperty('justification');
+
+      // Anthropic failed, should use fallback [500000, 500000]
+      const expectedScores = [
+        {
+          outcome: 'Yes',
+          // OpenAI (700000 * 0.6) + Anthropic Fallback (500000 * 0.4)
+          score: Math.floor(700000 * 0.6 + 500000 * 0.4)
+        },
+        {
+          outcome: 'No',
+          // OpenAI (300000 * 0.6) + Anthropic Fallback (500000 * 0.4)
+          score: Math.floor(300000 * 0.6 + 500000 * 0.4)
+        }
+      ];
+
+      expect(data.scores).toEqual(expectedScores);
+      
+      // Verify total score sums to 1,000,000
+      const totalScore = data.scores.reduce((sum: number, item: ScoreOutcome) => sum + item.score, 0);
+      // Allow for minor rounding differences
+      expect(totalScore).toBeCloseTo(1000000);
+
+      // Verify the justifier received the fallback justification
+      expect(mockJustifierProvider.generateResponse).toHaveBeenCalledWith(
+        expect.stringContaining('LLM_ERROR: I am unable to provide a score in the requested format.'),
+        expect.any(String) // The specific justifier model name
+      );
+      expect(data.justification).toBe(mockJustifierResponse);
+    });
+
+    test('should handle provider error during generation', async () => {
+      // Reusing the existing 'should handle errors in iterative responses' test structure
+      // but confirming it's placed within this describe block.
+      const mockErrorResponse = 'Simulated provider API error';
+      const mockOpenAIProvider = {
+        generateResponse: jest.fn().mockRejectedValue(new Error(mockErrorResponse)),
+        supportsAttachments: jest.fn().mockResolvedValue(false),
+      };
+
+      (LLMFactory.getProvider as jest.Mock).mockImplementation((providerName: string) => {
+         if (providerName === 'OpenAI') return mockOpenAIProvider;
+         // Add mock for JustifierProvider if needed for the test path
+         if (providerName === 'JustifierProvider') return { generateResponse: jest.fn() }; 
+         throw new Error(`Unknown provider: ${providerName}`);
+      });
+
+      const requestBody = {
+        prompt: 'Test prompt for provider error',
+        models: [
+          {
+            provider: 'OpenAI',
+            model: 'gpt-4',
+            weight: 1.0,
+          },
+        ],
+      };
+
+      const request = new Request('http://localhost/api/rank-and-justify', {
+        method: 'POST',
+        body: JSON.stringify(requestBody),
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      const response = await POST(request);
+      const data = await response.json();
+
+      // Provider errors (network issues, API errors) should still result in a 400 
+      // as the fallback is only for response *parsing* errors.
+      expect(response.status).toBe(400);
+      expect(data).toHaveProperty('error', mockErrorResponse);
+    });
+  });
+
   test('generateJustification should return a valid justification', async () => {
     // Reference existing test from rank-and-justify.test.ts
     startLine: 400
