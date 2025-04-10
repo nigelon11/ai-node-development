@@ -39,6 +39,26 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Running in Production
+
+To run the application in production mode, follow these steps:
+
+1.  **Set Environment Variables:** Ensure all required environment variables (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `JUSTIFIER_MODEL`) are set in your production environment. Note that `.env.local` is **not** loaded in production builds; these variables must be set directly in the server environment or through a `.env.production` file (though environment variables usually take precedence).
+
+2.  **Install Dependencies:** Run `npm install` (or `npm ci --omit=dev` for a cleaner install using `package-lock.json` and skipping development dependencies).
+
+3.  **Build the Application:** Create an optimized production build:
+    ```bash
+    npm run build
+    ```
+    This command compiles the application and outputs the result to the `.next` directory.
+
+4.  **Start the Production Server:** Start the server using the built application:
+    ```bash
+    npm start
+    ```
+    This command starts the Next.js production server, which serves the optimized application, typically on port 3000 unless configured otherwise (e.g., via the `PORT` environment variable).
+
 ## Project Structure
 
 - `src/app/`: Contains the main application pages and API routes
