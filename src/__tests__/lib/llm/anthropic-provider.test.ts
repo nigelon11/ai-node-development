@@ -30,7 +30,10 @@ describe('AnthropicProvider', () => {
 
   test('getModels returns expected models', async () => {
     const models = await provider.getModels();
-    expect(models).toEqual(modelConfig.anthropic);
+    expect(models).toEqual(modelConfig.anthropic.map(m => ({
+      ...m,
+      supportsAttachments: m.supportsImages 
+    })));
   });
 
   test('supportsImages returns correct values', () => {
@@ -41,7 +44,7 @@ describe('AnthropicProvider', () => {
 
   test('generateResponse returns expected response', async () => {
     const mockInvoke = jest.fn().mockResolvedValue({ content: 'Mocked Anthropic response' });
-    (ChatAnthropic as jest.Mock).mockImplementation(() => ({
+    (ChatAnthropic as unknown as jest.Mock).mockImplementation(() => ({
       invoke: mockInvoke,
     }));
 
@@ -57,7 +60,7 @@ describe('AnthropicProvider', () => {
 
   test('generateResponseWithImage returns expected response', async () => {
     const mockInvoke = jest.fn().mockResolvedValue({ content: 'Mocked image response' });
-    (ChatAnthropic as jest.Mock).mockImplementation(() => ({
+    (ChatAnthropic as unknown as jest.Mock).mockImplementation(() => ({
       invoke: mockInvoke,
     }));
 
@@ -95,7 +98,7 @@ describe('AnthropicProvider', () => {
 
   test('generateResponseWithAttachments returns expected response', async () => {
     const mockInvoke = jest.fn().mockResolvedValue({ content: 'Mocked attachments response' });
-    (ChatAnthropic as jest.Mock).mockImplementation(() => ({
+    (ChatAnthropic as unknown as jest.Mock).mockImplementation(() => ({
       invoke: mockInvoke,
     }));
 
@@ -141,7 +144,7 @@ describe('AnthropicProvider', () => {
     await expect(provider.generateResponseWithAttachments(
       'Process these attachments',
       'claude-2.1',
-      [{ type: 'image', content: 'base64EncodedImage' }]
+      [{ type: 'image', content: 'base64EncodedImage', mediaType: 'image/jpeg' }]
     )).rejects.toThrow('Model claude-2.1 does not support attachments.');
   });
 
@@ -156,7 +159,7 @@ describe('AnthropicProvider', () => {
 
   test('generateResponseWithImage accepts valid image formats', async () => {
     const mockInvoke = jest.fn().mockResolvedValue({ content: 'Mocked image response' });
-    (ChatAnthropic as jest.Mock).mockImplementation(() => ({
+    (ChatAnthropic as unknown as jest.Mock).mockImplementation(() => ({
       invoke: mockInvoke,
     }));
 
@@ -197,7 +200,7 @@ describe('AnthropicProvider', () => {
 
   test('generateResponseWithAttachments accepts valid image formats', async () => {
     const mockInvoke = jest.fn().mockResolvedValue({ content: 'Mocked attachments response' });
-    (ChatAnthropic as jest.Mock).mockImplementation(() => ({
+    (ChatAnthropic as unknown as jest.Mock).mockImplementation(() => ({
       invoke: mockInvoke,
     }));
 

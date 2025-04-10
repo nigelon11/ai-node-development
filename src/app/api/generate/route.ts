@@ -82,7 +82,7 @@ export async function POST(request: Request) {
     const attachments: Array<{ type: string; content: string; mediaType: string }> = [];
 
     // Process each form entry
-    for (const [key, value] of formData.entries()) {
+    for (const [key, value] of Array.from(formData.entries())) {
       console.log('Processing form entry:', { key, isFile: value instanceof Blob });
 
       if (value instanceof Blob) {
@@ -134,7 +134,7 @@ export async function POST(request: Request) {
     }
 
     let response: string;
-    if (attachments.length > 0 && provider.supportsAttachments) {
+    if (attachments.length > 0 && provider.supportsAttachments(modelName)) {
       response = await provider.generateResponseWithAttachments(
         prompt,
         modelName,

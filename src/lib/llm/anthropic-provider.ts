@@ -19,8 +19,11 @@ export class AnthropicProvider implements LLMProvider {
     this.models = modelConfig.anthropic;
   }
 
-  async getModels(): Promise<Array<{ name: string; supportsImages: boolean }>> {
-    return this.models;
+  async getModels(): Promise<Array<{ name: string; supportsImages: boolean; supportsAttachments: boolean }>> {
+    return this.models.map(model => ({
+      ...model,
+      supportsAttachments: model.supportsImages
+    }));
   }
 
   supportsImages(model: string): boolean {
